@@ -1,7 +1,16 @@
 import { Client } from '@elastic/elasticsearch';
 
+const apiKey = process.env.ELASTICSEARCH_API_KEY;
+const username = process.env.ELASTICSEARCH_USERNAME;
+const password = process.env.ELASTICSEARCH_PASSWORD;
+
 export const esClient = new Client({
   node: process.env.ELASTICSEARCH_NODE || 'http://localhost:9200',
+  ...(apiKey
+    ? { auth: { apiKey } }
+    : username && password
+      ? { auth: { username, password } }
+      : {}),
 });
 
 export async function initElasticsearch() {

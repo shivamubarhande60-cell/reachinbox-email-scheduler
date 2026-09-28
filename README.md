@@ -67,8 +67,10 @@ Use Node.js 20 or later, npm, and Docker Compose.
 | Setting | Purpose |
 | --- | --- |
 | `DATABASE_URL` | MySQL connection string; Compose publishes MySQL on port 3307. |
-| `REDIS_HOST`, `REDIS_PORT` | Redis connection used by BullMQ, OAuth state, and atomic rate-limit counters. |
+| `REDIS_URL` | Optional hosted Redis connection URL; takes precedence over `REDIS_HOST` and `REDIS_PORT`. Supports `redis://` and `rediss://` URLs. |
+| `REDIS_HOST`, `REDIS_PORT` | Redis host and port used when `REDIS_URL` is unset. |
 | `SESSION_SECRET` | HMAC key for the HTTP-only login cookie; use at least 32 random characters. |
+| `SESSION_COOKIE_SAME_SITE` | Session-cookie policy: `lax` by default, or `none` for a frontend and API hosted on different sites. `none` requires HTTPS. |
 | `ENABLE_LOCAL_DEMO_LOGIN` | Enables local-only dashboard preview outside production; default: false. |
 | `TOKEN_ENCRYPTION_KEY` | 64-character hex key used to encrypt saved Slack OAuth tokens and dashboard-managed SMTP passwords with AES-256-GCM. Back it up securely; changing it makes existing saved credentials unreadable. |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_CALLBACK_URL` | Google OAuth credentials and callback. |
@@ -78,8 +80,24 @@ Use Node.js 20 or later, npm, and Docker Compose.
 | `EMAIL_DELAY_MS` | Minimum delay in milliseconds between send starts for each sender. Default: 2000. |
 | `MAX_EMAILS_PER_HOUR_PER_SENDER` | Maximum emails for a sender in one UTC hour. Default: 200. |
 | `ELASTICSEARCH_NODE` | Elasticsearch URL. Default: `http://localhost:9200`. |
+| `ELASTICSEARCH_API_KEY` | Optional Elasticsearch API key for a hosted Elasticsearch cluster. Alternatively, set both `ELASTICSEARCH_USERNAME` and `ELASTICSEARCH_PASSWORD`. |
 
 The compose file stores Redis AOF data, MySQL data, and Elasticsearch data in named volumes.
+
+## Deploy to Render
+
+The root [Dockerfile](./Dockerfile) builds the backend and frontend into one Render web service. Serving both on one HTTPS origin avoids cross-site session-cookie restrictions. Render Key Value can provide Redis; Render does not provide managed MySQL, so use a hosted MySQL provider and set its connection string as `DATABASE_URL`.
+
+Render's free web instances can spin down while idle, so they are not suitable for reliably sending scheduled emails around the clock. Use an always-on web instance and a persistent Key Value plan for a continuous scheduler; these may incur charges.
+
+1. Create a Render **Key Value** service in the same region as the web service. Choose a persistent plan suitable for BullMQ data; do not use an ephemeral Redis instance for scheduled jobs.
+2. Create a Render **Web Service** from this private GitHub repository. Use the repository root and Docker runtime so Render builds the root `Dockerfile`. Add `REDIS_URL` using the Key Value service's internal connection URL, and add `DATABASE_URL` from a hosted MySQL database reachable from Render.
+3. Set the required environment values in the Render dashboard: `SESSION_SECRET` (at least 32 random characters), `TOKEN_ENCRYPTION_KEY` (64 hex characters), Google and Slack OAuth credentials, `SMTP_SENDERS`, and `ELASTICSEARCH_NODE` plus an API key or username/password if using hosted Elasticsearch. Keep credentials in Render's secret environment settings.
+4. Deploy and open the generated `https://<service>.onrender.com` URL. `FRONTEND_URL` and the OAuth callback URLs default to that Render URL when their explicit variables are omitted. Add `https://<service>.onrender.com/auth/google/callback` and `https://<service>.onrender.com/auth/slack/callback` to the corresponding Google and Slack app settings. If you set callback URL variables explicitly, they must match those exact URLs.
+5. Run `npm run db:push` once from the Render service shell to initialize the MySQL schema. The Docker build generates Prisma Client and builds both frontend and backend; Render supplies `PORT`.
+6. Check `https://<service>.onrender.com/health`, sign in, schedule an Ethereal test message, verify queue status, and test search. Leave `SESSION_COOKIE_SAME_SITE` unset (`lax`) for this same-origin setup.
+
+If deploying the frontend separately on Vercel instead, set its `VITE_API_URL` to the Render API URL, set Render's `FRONTEND_URL` to the Vercel origin, and use `SESSION_COOKIE_SAME_SITE=none` over HTTPS. Some browsers restrict cross-site cookies; using the single-origin Render deployment above avoids that issue. Keep all provider data services running with persistent storage so delayed jobs survive restarts.
 
 ### Managing senders
 

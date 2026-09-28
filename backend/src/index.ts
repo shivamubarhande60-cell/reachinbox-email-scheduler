@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { randomBytes } from 'node:crypto';
+import path from 'node:path';
 import cors from 'cors';
 import express from 'express';
 import { Prisma } from '@prisma/client';
@@ -28,7 +29,7 @@ import { encryptSecret, encryptToken } from '../services/tokenEncryption';
 
 const app = express();
 const port = Number(process.env.PORT || 5000);
-const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+const frontendUrl = process.env.FRONTEND_URL || process.env.RENDER_EXTERNAL_URL || 'http://localhost:5173';
 const configuredHourlyLimit = Number(process.env.MAX_EMAILS_PER_HOUR_PER_SENDER || process.env.MAX_EMAILS_PER_HOUR || 200);
 const minimumDelayMs = Number(process.env.EMAIL_DELAY_MS || 2000);
 let httpServer: ReturnType<typeof app.listen> | undefined;
@@ -58,6 +59,14 @@ function requireConfiguration(value: string | undefined, name: string) {
 
 function oauthStateKey(provider: string, state: string) {
   return `oauth-state:${provider}:${state}`;
+}
+
+function googleCallbackUrl() {
+  return process.env.GOOGLE_CALLBACK_URL || new URL('/auth/google/callback', frontendUrl).toString();
+}
+
+function slackCallbackUrl() {
+  return process.env.SLACK_CALLBACK_URL || new URL('/auth/slack/callback', frontendUrl).toString();
 }
 
 function isString(value: unknown): value is string {
@@ -119,7 +128,7 @@ function getRequestUserId(request: express.Request, response: express.Response) 
 app.get('/auth/google', async (_request, response) => {
   try {
     const clientId = requireConfiguration(process.env.GOOGLE_CLIENT_ID, 'GOOGLE_CLIENT_ID');
-    const redirectUri = process.env.GOOGLE_CALLBACK_URL || 'http://localhost:5000/auth/google/callback';
+    const redirectUri = googleCallbackUrl();
     const state = randomBytes(32).toString('hex');
     await redisConnection.set(oauthStateKey('google', state), '1', 'EX', 600);
 
@@ -185,7 +194,7 @@ app.get('/auth/google/callback', async (request, response) => {
 
     const clientId = requireConfiguration(process.env.GOOGLE_CLIENT_ID, 'GOOGLE_CLIENT_ID');
     const clientSecret = requireConfiguration(process.env.GOOGLE_CLIENT_SECRET, 'GOOGLE_CLIENT_SECRET');
-    const redirectUri = process.env.GOOGLE_CALLBACK_URL || 'http://localhost:5000/auth/google/callback';
+    const redirectUri = googleCallbackUrl();
     const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -244,7 +253,7 @@ app.get('/auth/slack', async (request, response) => {
 
   try {
     const clientId = requireConfiguration(process.env.SLACK_CLIENT_ID, 'SLACK_CLIENT_ID');
-    const redirectUri = process.env.SLACK_CALLBACK_URL || 'http://localhost:5000/auth/slack/callback';
+    const redirectUri = slackCallbackUrl();
     const state = randomBytes(32).toString('hex');
     await redisConnection.set(oauthStateKey('slack', state), String(userId), 'EX', 600);
 
@@ -284,7 +293,7 @@ app.get('/auth/slack/callback', async (request, response) => {
         code,
         client_id: requireConfiguration(process.env.SLACK_CLIENT_ID, 'SLACK_CLIENT_ID'),
         client_secret: requireConfiguration(process.env.SLACK_CLIENT_SECRET, 'SLACK_CLIENT_SECRET'),
-        redirect_uri: process.env.SLACK_CALLBACK_URL || 'http://localhost:5000/auth/slack/callback',
+        redirect_uri: slackCallbackUrl(),
       }),
     });
     const tokenData = await tokenResponse.json() as {
@@ -667,6 +676,22 @@ app.use('/admin/queues', (request, response, next) => {
   }
   next();
 }, serverAdapter.getRouter());
+
+app.get('/health', (_request, response) => {
+  response.status(200).json({ status: 'ok' });
+});
+
+const frontendDistDir = process.env.FRONTEND_DIST_DIR;
+if (frontendDistDir) {
+  app.use(express.static(frontendDistDir));
+  app.get(/.*/, (request, response, next) => {
+    if (request.path.startsWith('/api/') || request.path.startsWith('/auth/') || request.path.startsWith('/admin/')) {
+      next();
+      return;
+    }
+    response.sendFile(path.join(frontendDistDir, 'index.html'));
+  });
+}
 
 app.use((error: unknown, _request: express.Request, response: express.Response, _next: express.NextFunction) => {
   console.error('Unhandled API error:', error);

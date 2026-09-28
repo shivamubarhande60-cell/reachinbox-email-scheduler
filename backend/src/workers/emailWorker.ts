@@ -2,19 +2,15 @@ import 'dotenv/config';
 import { randomUUID } from 'node:crypto';
 import { DelayedError, Job, Worker } from 'bullmq';
 import type { Prisma } from '@prisma/client';
-import IORedis from 'ioredis';
 import { emailIndexQueue } from '../queues/emailQueue';
 import { indexEmailDoc } from '../../services/elasticsearch';
 import prisma from '../../services/database';
+import { createRedisConnection } from '../../services/redisConnection';
 import { reserveHourlyCapacity } from '../../services/rateLimit';
 import { getSender, getTransporter, type Sender } from '../../services/senders';
 import { decryptToken } from '../../services/tokenEncryption';
 
-const redis = new IORedis({
-  host: process.env.REDIS_HOST || 'localhost',
-  port: Number(process.env.REDIS_PORT || 6379),
-  maxRetriesPerRequest: null,
-});
+const redis = createRedisConnection();
 
 const concurrency = Number(process.env.WORKER_CONCURRENCY || 5);
 const globalHourlyLimit = Number(process.env.MAX_EMAILS_PER_HOUR_PER_SENDER || process.env.MAX_EMAILS_PER_HOUR || 200);

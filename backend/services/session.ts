@@ -4,6 +4,15 @@ import type { Request, Response } from 'express';
 const cookieName = 'reachinbox_session';
 const sessionDurationSeconds = 60 * 60 * 24 * 7;
 
+function getCookieAttributes(maxAge: number) {
+  const sameSite = process.env.SESSION_COOKIE_SAME_SITE || 'lax';
+  if (!['lax', 'strict', 'none'].includes(sameSite)) {
+    throw new Error('SESSION_COOKIE_SAME_SITE must be lax, strict, or none.');
+  }
+  const secure = process.env.NODE_ENV === 'production' || sameSite === 'none';
+  return `HttpOnly; SameSite=${sameSite}; Path=/; Max-Age=${maxAge}${secure ? '; Secure' : ''}`;
+}
+
 function getSecret() {
   const secret = process.env.SESSION_SECRET;
   if (!secret || secret.length < 32) {
@@ -22,15 +31,14 @@ export function setSessionCookie(response: Response, userId: number) {
     expiresAt: Date.now() + sessionDurationSeconds * 1000,
   })).toString('base64url');
   const token = `${payload}.${sign(payload)}`;
-  const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
   response.setHeader(
     'Set-Cookie',
-    `${cookieName}=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${sessionDurationSeconds}${secure}`,
+    `${cookieName}=${token}; ${getCookieAttributes(sessionDurationSeconds)}`,
   );
 }
 
 export function clearSessionCookie(response: Response) {
-  response.setHeader('Set-Cookie', `${cookieName}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`);
+  response.setHeader('Set-Cookie', `${cookieName}=; ${getCookieAttributes(0)}`);
 }
 
 export function getSessionUserId(request: Request): number | null {
