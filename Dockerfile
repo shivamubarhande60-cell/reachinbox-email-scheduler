@@ -24,4 +24,4 @@ COPY --from=backend-build /workspace/backend/dist ./dist
 COPY --from=backend-build /workspace/backend/prisma ./prisma
 COPY --from=frontend-build /workspace/frontend/dist /app/frontend/dist
 EXPOSE 5000
-CMD ["node", "dist/src/index.js"]
+CMD ["sh", "-c", "npm run db:push && node dist/src/index.js"]
