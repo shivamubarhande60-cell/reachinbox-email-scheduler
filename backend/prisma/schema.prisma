@@ -1,0 +1,85 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model Campaign {
+  id             Int      @id @default(autoincrement())
+  name           String
+  subject        String   @db.VarChar(255)
+  body           String   @db.MediumText
+  status         String   @default("SCHEDULED")
+  senderId       String   @default("default")
+  startAt        DateTime @default(now())
+  delayMs        Int      @default(2000)
+  hourlyLimit    Int?
+  idempotencyKey String?  @unique
+  userId         Int?
+  user           User?    @relation(fields: [userId], references: [id])
+  leads          Lead[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model Lead {
+  id           Int       @id @default(autoincrement())
+  email        String
+  status       String    @default("PENDING")
+  campaignId   Int
+  campaign     Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  senderId     String    @default("default")
+  scheduledAt  DateTime?
+  sentAt       DateTime?
+  errorMessage String?   @db.Text
+  indexedAt    DateTime?
+  createdAt    DateTime  @default(now())
+}
+
+model User {
+  id             Int               @id @default(autoincrement())
+  googleId       String            @unique
+  email          String            @unique
+  name           String
+  picture        String?
+  campaigns      Campaign[]
+  senders        Sender[]
+  slackConnection SlackConnection?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+}
+
+model Sender {
+  id                 String   @id @db.VarChar(64)
+  userId             Int
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name               String   @db.VarChar(120)
+  from               String   @db.VarChar(320)
+  host               String   @db.VarChar(255)
+  port               Int
+  username           String   @db.VarChar(255)
+  encryptedPassword  String   @db.Text
+  passwordIv         String   @db.VarChar(64)
+  passwordTag        String   @db.VarChar(64)
+  maxEmailsPerHour   Int
+  minimumDelayMs     Int
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model SlackConnection {
+  id             Int      @id @default(autoincrement())
+  userId         Int      @unique
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  slackUserId    String
+  encryptedToken String   @db.Text
+  tokenIv        String   @db.VarChar(64)
+  tokenTag       String   @db.VarChar(64)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
