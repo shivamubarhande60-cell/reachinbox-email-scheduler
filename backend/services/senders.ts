@@ -1,6 +1,7 @@
 import nodemailer, { type Transporter } from 'nodemailer';
 import { randomUUID } from 'node:crypto';
 import prisma from './database';
+import { isEmailSimulationEnabled } from './emailDeliveryMode';
 import { decryptSecret, encryptSecret } from './tokenEncryption';
 
 export interface Sender {
@@ -14,6 +15,7 @@ export interface Sender {
   maxEmailsPerHour: number;
   minimumDelayMs: number;
   managed?: boolean;
+  simulated?: boolean;
 }
 
 const configuredHourlyLimit = Number(process.env.MAX_EMAILS_PER_HOUR_PER_SENDER || process.env.MAX_EMAILS_PER_HOUR || 200);
@@ -25,6 +27,21 @@ export class SenderNotFoundError extends Error {}
 export class SenderInUseError extends Error {}
 
 function loadSenders(): Sender[] {
+  if (isEmailSimulationEnabled()) {
+    return [{
+      id: 'render-demo-sender',
+      name: 'Render demo (simulated)',
+      from: 'demo@reachinbox.invalid',
+      host: 'simulation.local',
+      port: 0,
+      user: '',
+      pass: '',
+      maxEmailsPerHour: configuredHourlyLimit,
+      minimumDelayMs: configuredMinimumDelayMs,
+      simulated: true,
+    }];
+  }
+
   const configured = process.env.SMTP_SENDERS;
   if (configured) {
     const senders = JSON.parse(configured) as Sender[];
@@ -99,6 +116,8 @@ function toSender(record: {
 }
 
 export async function listSenders(userId: number) {
+  if (isEmailSimulationEnabled()) return senders;
+
   const managed = await prisma.sender.findMany({
     where: { userId },
     orderBy: { createdAt: 'asc' },
@@ -107,6 +126,13 @@ export async function listSenders(userId: number) {
 }
 
 export async function getSender(id: string, userId: number) {
+  if (isEmailSimulationEnabled()) {
+    const configuredSender = senders.find((sender) => sender.id === id);
+    if (configuredSender) return configuredSender;
+    const managed = await prisma.sender.findFirst({ where: { id, userId } });
+    return managed ? { ...toSender(managed), simulated: true } : undefined;
+  }
+
   const managed = await prisma.sender.findFirst({ where: { id, userId } });
   if (managed) return toSender(managed);
   return senders.find((sender) => sender.id === id);
@@ -137,6 +163,10 @@ export async function createManagedSender(
   input: unknown,
   limits: { maxEmailsPerHour: number; minimumDelayMs: number; etherealOnly?: boolean },
 ) {
+  if (isEmailSimulationEnabled()) {
+    throw new SenderInputError('Demo delivery is enabled. No SMTP sender credentials are needed.');
+  }
+
   const data = input && typeof input === 'object' && !Array.isArray(input)
     ? input as Record<string, unknown>
     : {};

@@ -28,6 +28,7 @@ interface User {
   email: string;
   picture: string | null;
   isDemo: boolean;
+  simulatedDelivery: boolean;
   slackConnected: boolean;
   slackConfigured: boolean;
 }
@@ -57,6 +58,7 @@ interface Sender {
   maxEmailsPerHour: number;
   minimumDelayMs: number;
   managed: boolean;
+  simulated: boolean;
 }
 
 type EmailRow = Lead & Pick<Campaign, 'subject' | 'name' | 'senderId'>;
@@ -110,16 +112,19 @@ function updateLandingPointer(event: ReactPointerEvent<HTMLElement>, reset = fal
 
 function StatusLabel({ status }: { status: string }) {
   const isSent = status === 'SENT';
+  const isSimulated = status === 'SIMULATED';
   const isFailed = status === 'FAILED';
-  const label = isSent ? 'Sent' : isFailed ? 'Failed' : status === 'THROTTLED_DELAYED' ? 'Queued for later' : 'Scheduled';
+  const label = isSimulated ? 'Simulated' : isSent ? 'Sent' : isFailed ? 'Failed' : status === 'THROTTLED_DELAYED' ? 'Queued for later' : 'Scheduled';
   const color = isSent
     ? 'bg-emerald-50 text-emerald-700'
-    : isFailed
+    : isSimulated
+      ? 'bg-sky-50 text-sky-700'
+      : isFailed
       ? 'bg-rose-50 text-rose-700'
       : 'bg-amber-50 text-amber-700';
 
   return <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${color}`}>
-    <span className={`h-1.5 w-1.5 rounded-full ${isSent ? 'bg-emerald-500' : isFailed ? 'bg-rose-500' : 'bg-amber-500'}`} />
+    <span className={`h-1.5 w-1.5 rounded-full ${isSent ? 'bg-emerald-500' : isSimulated ? 'bg-sky-500' : isFailed ? 'bg-rose-500' : 'bg-amber-500'}`} />
     {label}
   </span>;
 }
@@ -216,12 +221,14 @@ function SenderManagement({
   senders,
   maxHourlyLimit,
   minimumDelayMs,
+  simulatedDelivery,
   onClose,
   onChanged,
 }: {
   senders: Sender[];
   maxHourlyLimit: number;
   minimumDelayMs: number;
+  simulatedDelivery: boolean;
   onClose: () => void;
   onChanged: () => Promise<void>;
 }) {
@@ -307,7 +314,7 @@ function SenderManagement({
           <button type="button" onClick={onClose} disabled={busy} aria-label="Close sender management" className="rounded-lg p-2 text-slate-400 hover:bg-slate-100"><X size={18} /></button>
         </header>
 
-        <div className="grid gap-6 p-5 sm:p-7 lg:grid-cols-[1fr_1.1fr]">
+        <div className={`grid gap-6 p-5 sm:p-7 ${simulatedDelivery ? '' : 'lg:grid-cols-[1fr_1.1fr]'}`}>
           <section aria-labelledby="configured-senders-title">
             <h3 id="configured-senders-title" className="text-sm font-semibold text-slate-800">Configured senders <span className="text-slate-400">({senders.length})</span></h3>
             <div className="mt-3 space-y-2">
@@ -318,6 +325,7 @@ function SenderManagement({
                     <p className="truncate text-sm font-medium text-slate-800">{sender.name}</p>
                     <p className="truncate text-xs text-slate-500">{sender.from}</p>
                     <p className="mt-1 text-[11px] text-slate-400">{sender.maxEmailsPerHour}/hour · {Math.ceil(sender.minimumDelayMs / 1000)} sec minimum gap</p>
+                    {sender.simulated && <span className="mt-1 inline-block rounded-full bg-sky-50 px-2 py-0.5 text-[10px] text-sky-700">Simulated · no email sent</span>}
                     {!sender.managed && <span className="mt-1 inline-block rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-500">Environment configured</span>}
                   </div>
                   {sender.managed && <button type="button" onClick={() => void remove(sender)} disabled={busy} title={`Remove ${sender.name}`} aria-label={`Remove ${sender.name}`} className="rounded-md p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50"><Trash2 size={15} /></button>}
@@ -326,7 +334,11 @@ function SenderManagement({
             </div>
           </section>
 
-          <form onSubmit={(event) => void submit(event)} className="space-y-3">
+          {simulatedDelivery ? (
+            <p role="status" className="self-start rounded-xl border border-sky-200 bg-sky-50 p-4 text-sm leading-6 text-sky-900">
+              Demo delivery is active. Emails are processed by the scheduler and marked as simulated; no SMTP connection is made and no messages are sent.
+            </p>
+          ) : <form onSubmit={(event) => void submit(event)} className="space-y-3">
             <div>
               <h3 className="text-sm font-semibold text-slate-800">Connect a sender</h3>
               <p className="mt-1 text-xs leading-5 text-slate-500">SMTP credentials are verified before saving and encrypted in the database.</p>
@@ -349,7 +361,7 @@ function SenderManagement({
               {busy ? <LoaderCircle className="animate-spin" size={15} /> : <Plus size={16} />}
               {busy ? 'Saving sender…' : 'Verify and add sender'}
             </button>
-          </form>
+          </form>}
         </div>
       </section>
     </div>
@@ -671,7 +683,7 @@ export default function App() {
     })),
   ), [campaigns]);
   const scheduled = rows.filter((row) => row.status === 'PENDING' || row.status === 'THROTTLED_DELAYED');
-  const sent = rows.filter((row) => row.status === 'SENT' || row.status === 'FAILED');
+  const sent = rows.filter((row) => row.status === 'SENT' || row.status === 'SIMULATED' || row.status === 'FAILED');
   const delivered = sent.filter((row) => row.status === 'SENT').length;
   const failed = sent.filter((row) => row.status === 'FAILED').length;
   const selectedCampaign = campaigns.find((campaign) => campaign.id === selectedCampaignId) || null;
@@ -694,7 +706,7 @@ export default function App() {
       ? rowsToShow
       : rowsToShow.filter((row) => activeTab === 'scheduled'
         ? row.status === 'PENDING' || row.status === 'THROTTLED_DELAYED'
-        : row.status === 'SENT' || row.status === 'FAILED');
+        : row.status === 'SENT' || row.status === 'SIMULATED' || row.status === 'FAILED');
 
   const showActivity = (tab: DashboardTab) => {
     setDashboardSection('activity');
@@ -860,6 +872,9 @@ export default function App() {
         </header>
 
         <main className="workspace-content mx-auto max-w-6xl space-y-5 px-5 py-7 sm:px-10 sm:py-8">
+          {user.simulatedDelivery && <div role="status" className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+            Demo delivery mode is active. Scheduling, queue processing, throttling, and tracking work, but email delivery is simulated and no email is sent.
+          </div>}
           {user.isDemo && <div role="status" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
             Local preview account. Sending is restricted to Ethereal SMTP; Google sign-in is unchanged.
           </div>}
@@ -878,7 +893,7 @@ export default function App() {
                       ? selectedCampaign?.name || 'Campaign details'
                       : dashboardSection === 'attention'
                         ? 'Needs attention'
-                        : activeTab === 'scheduled' ? 'Scheduled emails' : 'Sent emails'}
+                        : activeTab === 'scheduled' ? 'Scheduled emails' : user.simulatedDelivery ? 'Processed emails' : 'Sent emails'}
               </h1>
               <p className="mt-1 text-sm text-slate-500">
                 {dashboardSection === 'campaigns'
@@ -904,7 +919,7 @@ export default function App() {
           <section aria-label="Email activity summary" className="activity-overview">
             {[
               { label: 'Scheduled', value: scheduled.length, detail: 'Waiting in your queue', icon: Clock3, tab: 'scheduled' as const, tone: 'mint' },
-              { label: 'Sent', value: delivered, detail: 'Successfully delivered', icon: Send, tab: 'sent' as const, tone: 'blue' },
+              { label: user.simulatedDelivery ? 'Processed' : 'Sent', value: user.simulatedDelivery ? sent.filter((row) => row.status === 'SIMULATED').length : delivered, detail: user.simulatedDelivery ? 'Simulated; not delivered' : 'Successfully delivered', icon: Send, tab: 'sent' as const, tone: 'blue' },
               { label: 'Needs attention', value: failed, detail: 'Failed delivery attempts', icon: AlertCircle, section: 'attention' as const, tone: 'amber' },
               { label: 'Campaigns', value: campaigns.length, detail: 'Total campaigns created', icon: Mail, section: 'campaigns' as const, tone: 'violet' },
             ].map((stat) => {
@@ -962,7 +977,7 @@ export default function App() {
                     </tr></thead>
                     <tbody className="divide-y divide-slate-100">
                       {campaigns.map((campaign) => {
-                        const campaignSent = campaign.leads.filter((lead) => lead.status === 'SENT').length;
+                        const campaignSent = campaign.leads.filter((lead) => lead.status === 'SENT' || lead.status === 'SIMULATED').length;
                         const campaignFailed = campaign.leads.filter((lead) => lead.status === 'FAILED').length;
                         const campaignScheduled = campaign.leads.filter((lead) => lead.status === 'PENDING' || lead.status === 'THROTTLED_DELAYED').length;
                         return (
@@ -975,7 +990,7 @@ export default function App() {
                                 </span>
                                 <span className="truncate px-3 py-4 text-sm text-slate-600">{campaign.senderId}</span>
                                 <span className="px-3 py-4 text-sm text-slate-600">{campaign.leads.length}</span>
-                                <span className="px-3 py-4 text-xs text-slate-500">{campaignSent} sent · {campaignScheduled} scheduled{campaignFailed ? ` · ${campaignFailed} failed` : ''}</span>
+                                <span className="px-3 py-4 text-xs text-slate-500">{campaignSent} {user.simulatedDelivery ? 'processed' : 'sent'} · {campaignScheduled} scheduled{campaignFailed ? ` · ${campaignFailed} failed` : ''}</span>
                                 <span className="whitespace-nowrap px-5 py-4 text-sm text-slate-500">{formatDate(campaign.createdAt)}</span>
                               </button>
                             </td>
@@ -1003,7 +1018,7 @@ export default function App() {
           <div className="workspace-tabs flex flex-col justify-between gap-3 border-b border-slate-100 pb-2 sm:flex-row sm:items-center">
             <div className="flex w-fit rounded-lg bg-slate-100 p-1">
               <button type="button" aria-pressed={activeTab === 'scheduled'} onClick={() => setActiveTab('scheduled')} className={`rounded-md px-4 py-2 text-sm ${activeTab === 'scheduled' ? 'bg-white font-medium text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Scheduled <span className="ml-1 text-xs text-slate-400">{scheduled.length}</span></button>
-              <button type="button" aria-pressed={activeTab === 'sent'} onClick={() => setActiveTab('sent')} className={`rounded-md px-4 py-2 text-sm ${activeTab === 'sent' ? 'bg-white font-medium text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Sent <span className="ml-1 text-xs text-slate-400">{sent.length}</span></button>
+              <button type="button" aria-pressed={activeTab === 'sent'} onClick={() => setActiveTab('sent')} className={`rounded-md px-4 py-2 text-sm ${activeTab === 'sent' ? 'bg-white font-medium text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>{user.simulatedDelivery ? 'Processed' : 'Sent'} <span className="ml-1 text-xs text-slate-400">{sent.length}</span></button>
             </div>
             <div className="flex items-center gap-2">
               <button type="button" onClick={() => {
@@ -1086,6 +1101,7 @@ export default function App() {
         senders={senders}
         maxHourlyLimit={maxHourlyLimit}
         minimumDelayMs={minimumDelayMs}
+        simulatedDelivery={user.simulatedDelivery}
         onClose={() => setShowSenders(false)}
         onChanged={() => loadDashboard(true)}
       />}

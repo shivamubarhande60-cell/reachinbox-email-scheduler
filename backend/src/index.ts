@@ -23,6 +23,7 @@ import {
   senders,
 } from '../services/senders';
 import { isLocalDemoEnabled } from '../services/localDemo';
+import { isEmailSimulationEnabled } from '../services/emailDeliveryMode';
 import { clearSessionCookie, getSessionUserId, setSessionCookie } from '../services/session';
 import { validateScheduleInput } from './services/scheduleValidation';
 import { encryptSecret, encryptToken } from '../services/tokenEncryption';
@@ -355,6 +356,7 @@ app.get('/api/auth/me', async (request, response) => {
       email: user.email,
       picture: user.picture,
       isDemo: user.googleId === 'local-demo-user',
+      simulatedDelivery: isEmailSimulationEnabled(),
       slackConnected: Boolean(user.slackConnection),
       slackConfigured: Boolean(process.env.SLACK_CLIENT_ID && process.env.SLACK_CLIENT_SECRET),
     },
@@ -390,13 +392,14 @@ app.get('/api/senders', async (request, response) => {
 
     response.json({
       status: 'Success',
-      data: configuredSenders.map(({ id, name, from, maxEmailsPerHour: hourlyLimit, minimumDelayMs: delayMs, managed }) => ({
+      data: configuredSenders.map(({ id, name, from, maxEmailsPerHour: hourlyLimit, minimumDelayMs: delayMs, managed, simulated }) => ({
         id,
         name,
         from,
         maxEmailsPerHour: hourlyLimit ?? configuredHourlyLimit,
         minimumDelayMs: delayMs ?? minimumDelayMs,
         managed: managed === true,
+        simulated: simulated === true,
       })),
       maxEmailsPerHour: configuredHourlyLimit,
       minimumDelayMs,
@@ -417,7 +420,7 @@ app.post('/api/senders', async (request, response) => {
     await createManagedSender(userId, request.body, {
       maxEmailsPerHour: configuredHourlyLimit,
       minimumDelayMs,
-      etherealOnly: account?.googleId === 'local-demo-user',
+      etherealOnly: account?.googleId === 'local-demo-user' && !isEmailSimulationEnabled(),
     });
     response.status(201).json({ status: 'Success', message: 'SMTP sender connected.' });
   } catch (error) {
@@ -465,7 +468,7 @@ app.post('/api/campaigns/schedule', async (request, response) => {
     return;
   }
   const account = await prisma.user.findUnique({ where: { id: userId }, select: { googleId: true } });
-  if (account?.googleId === 'local-demo-user' && sender.host.toLowerCase() !== 'smtp.ethereal.email') {
+  if (account?.googleId === 'local-demo-user' && !sender.simulated && sender.host.toLowerCase() !== 'smtp.ethereal.email') {
     response.status(403).json({ status: 'Error', message: 'Local preview can only send through Ethereal SMTP.' });
     return;
   }

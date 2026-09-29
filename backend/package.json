@@ -7,7 +7,7 @@
     "build": "tsc",
     "start": "node dist/src/index.js",
     "dev": "ts-node src/index.ts",
-    "test": "npm run build && node --test test/scheduleValidation.test.cjs test/localDemo.test.cjs",
+    "test": "npm run build && node --test test/scheduleValidation.test.cjs test/localDemo.test.cjs test/emailDeliveryMode.test.cjs",
     "test:redis": "npm run build && node --test test/rateLimit.test.cjs test/queuePersistence.test.cjs",
     "db:push": "prisma db push",
     "db:generate": "prisma generate"

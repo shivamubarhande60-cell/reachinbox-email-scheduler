@@ -8,6 +8,7 @@ import prisma from '../../services/database';
 import { createRedisConnection } from '../../services/redisConnection';
 import { reserveHourlyCapacity } from '../../services/rateLimit';
 import { getSender, getTransporter, type Sender } from '../../services/senders';
+import { shouldSimulateEmailDelivery } from '../../services/emailDeliveryMode';
 import { decryptToken } from '../../services/tokenEncryption';
 
 const redis = createRedisConnection();
@@ -186,6 +187,22 @@ async function sendEmail(
   lead: SendingLead,
   sender: Sender,
 ) {
+  if (shouldSimulateEmailDelivery(sender.simulated)) {
+    const simulatedAt = new Date();
+    await prisma.lead.update({
+      where: { id: lead.id },
+      data: {
+        status: 'SIMULATED',
+        sentAt: simulatedAt,
+        scheduledAt: simulatedAt,
+        errorMessage: 'Demo mode: no email was sent.',
+      },
+    });
+    await queueEmailIndex(lead.id, 'simulated');
+    console.log(`Email delivery simulated for lead ${lead.id} using sender ${sender.id}.`);
+    return;
+  }
+
   try {
     await getTransporter(sender).sendMail({
       from: sender.from,
@@ -231,7 +248,7 @@ async function processEmail(job: Job<EmailJob>) {
     include: { campaign: true },
   });
   if (!lead) throw new Error(`Cannot send missing lead ${job.data.leadId}.`);
-  if (lead.status === 'SENT' || lead.status === 'FAILED') return;
+  if (lead.status === 'SENT' || lead.status === 'SIMULATED' || lead.status === 'FAILED') return;
   if (lead.status === 'SENDING') {
     await prisma.lead.update({
       where: { id: lead.id },
