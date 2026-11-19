@@ -1,31 +1,9 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useState,
-  type ReactNode,
-} from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { ApiError, getErrorMessage } from '../services/apiClient';
 import { authApi } from '../services/authApi';
 import { slackApi } from '../services/slackApi';
 import type { User } from '../types';
-
-interface AuthContextValue {
-  user: User | null;
-  authLoading: boolean;
-  authError: string;
-  demoEnabled: boolean;
-  demoLoading: boolean;
-  slackBusy: boolean;
-  loadUser: () => Promise<void>;
-  clearUser: () => void;
-  startDemoLogin: () => Promise<void>;
-  logout: () => Promise<void>;
-  disconnectSlack: () => Promise<string | null>;
-}
-
-const AuthContext = createContext<AuthContextValue | null>(null);
+import { AuthContext } from './authContextDef';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -52,12 +30,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    void loadUser();
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const result = await authApi.getCurrentUser();
+        if (!cancelled) {
+          setUser(result.data);
+          setAuthError('');
+        }
+      } catch (error) {
+        if (!cancelled) {
+          if (error instanceof ApiError && error.status === 401) {
+            setUser(null);
+          } else {
+            setAuthError('Could not reach the scheduler. Start the backend and try again.');
+          }
+        }
+      } finally {
+        if (!cancelled) {
+          setAuthLoading(false);
+        }
+      }
+    })();
+
     void authApi
       .getDemoStatus()
-      .then((result) => setDemoEnabled(result.enabled === true))
-      .catch(() => setDemoEnabled(false));
-  }, [loadUser]);
+      .then((result) => {
+        if (!cancelled) {
+          setDemoEnabled(result.enabled === true);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setDemoEnabled(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const clearUser = useCallback(() => {
     setUser(null);
@@ -113,12 +126,4 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       {children}
     </AuthContext.Provider>
   );
-}
-
-export function useAuth(): AuthContextValue {
-  const ctx = useContext(AuthContext);
-  if (!ctx) {
-    throw new Error('useAuth must be used within an AuthProvider.');
-  }
-  return ctx;
 }

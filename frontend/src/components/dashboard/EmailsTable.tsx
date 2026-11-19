@@ -1,6 +1,6 @@
-import { LoaderCircle, RefreshCw } from 'lucide-react';
-import { useAuth } from '../../state/AuthContext';
-import { useDashboard } from '../../state/DashboardContext';
+import { ArrowLeft, LoaderCircle, RefreshCw } from 'lucide-react';
+import { useAuth } from '../../state/useAuth';
+import { useDashboard } from '../../state/useDashboard';
 import { formatDate } from '../../utils/date';
 import { EmptyState } from '../common/EmptyState';
 import { StatusBadge } from '../common/StatusBadge';
@@ -28,113 +28,143 @@ export function EmailsTable() {
 
   if (!user) return null;
 
-  const emptyTitle = search
+  const emptyTitle = search.trim()
     ? 'No matching emails'
     : dashboardSection === 'attention'
-      ? 'Nothing needs attention'
+      ? 'No failed deliveries'
       : dashboardSection === 'campaign'
-        ? 'This campaign has no email records'
+        ? 'No recipients in this campaign'
         : `No ${activeTab} emails yet`;
 
-  const emptyDescription = search
-    ? 'Try a different email address or subject.'
+  const emptyDescription = search.trim()
+    ? 'Try searching by recipient address, subject line, or delivery status.'
     : dashboardSection === 'attention'
-      ? 'Failed deliveries will appear here with their error details.'
+      ? 'Emails that fail SMTP delivery will appear here with diagnostic details.'
       : dashboardSection === 'campaign'
-        ? 'Email activity for this campaign will show up here.'
-        : 'Your email activity will show up here.';
+        ? 'Recipient delivery logs for this campaign will appear here.'
+        : 'Schedule a campaign to see live queue updates here.';
+
+  const timeColumnLabel = search.trim()
+    ? 'Timestamp'
+    : activeTab === 'scheduled' && dashboardSection !== 'attention'
+      ? 'Scheduled for'
+      : 'Sent at';
 
   return (
-    <>
+    <div className="space-y-3">
       {dashboardSection === 'campaign' && (
-        <div className="flex items-center justify-between rounded-lg border border-slate-100 bg-white px-4 py-3">
-          <span className="text-sm text-slate-600">
-            {selectedCampaign?.leads.length || 0} emails in this campaign
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-zinc-200 bg-white px-4 py-2.5 text-sm">
+          <div className="flex items-center gap-2 text-zinc-500">
+            <button
+              type="button"
+              onClick={showCampaigns}
+              className="inline-flex items-center gap-1.5 font-medium text-zinc-700 hover:text-zinc-900"
+            >
+              <ArrowLeft size={14} aria-hidden="true" />
+              <span>Campaigns</span>
+            </button>
+            <span aria-hidden="true">/</span>
+            <span className="font-medium text-zinc-900">
+              {selectedCampaign?.name || 'Campaign'}
+            </span>
+          </div>
+          <span className="font-mono text-xs text-zinc-500 tabular-nums">
+            {selectedCampaign?.leads.length || 0} recipients
           </span>
-          <button
-            type="button"
-            onClick={showCampaigns}
-            className="text-sm font-medium text-emerald-700 hover:text-emerald-800"
-          >
-            Back to campaigns
-          </button>
         </div>
       )}
 
       {dashboardSection !== 'attention' && dashboardSection !== 'campaign' && (
-        <div className="workspace-tabs flex flex-col justify-between gap-3 border-b border-slate-100 pb-2 sm:flex-row sm:items-center">
-          <div className="flex w-fit rounded-lg bg-slate-100 p-1">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div
+            role="tablist"
+            aria-label="Email queue filter"
+            className="inline-flex rounded-lg border border-zinc-200 bg-zinc-100/80 p-0.5"
+          >
             <button
               type="button"
-              aria-pressed={activeTab === 'scheduled'}
+              role="tab"
+              aria-selected={activeTab === 'scheduled'}
               onClick={() => setActiveTab('scheduled')}
-              className={`rounded-md px-4 py-2 text-sm ${
+              className={`rounded-md px-3 py-1.5 text-xs font-medium ${
                 activeTab === 'scheduled'
-                  ? 'bg-white font-medium text-slate-800 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-700'
+                  ? 'bg-white text-zinc-900 shadow-sm'
+                  : 'text-zinc-600 hover:text-zinc-900'
               }`}
             >
-              Scheduled <span className="ml-1 text-xs text-slate-400">{scheduledRows.length}</span>
+              Scheduled{' '}
+              <span className="ml-1 font-mono text-[11px] text-zinc-500 tabular-nums">
+                {scheduledRows.length}
+              </span>
             </button>
             <button
               type="button"
-              aria-pressed={activeTab === 'sent'}
+              role="tab"
+              aria-selected={activeTab === 'sent'}
               onClick={() => setActiveTab('sent')}
-              className={`rounded-md px-4 py-2 text-sm ${
+              className={`rounded-md px-3 py-1.5 text-xs font-medium ${
                 activeTab === 'sent'
-                  ? 'bg-white font-medium text-slate-800 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-700'
+                  ? 'bg-white text-zinc-900 shadow-sm'
+                  : 'text-zinc-600 hover:text-zinc-900'
               }`}
             >
               {user.simulatedDelivery ? 'Processed' : 'Sent'}{' '}
-              <span className="ml-1 text-xs text-slate-400">{sentRows.length}</span>
+              <span className="ml-1 font-mono text-[11px] text-zinc-500 tabular-nums">
+                {sentRows.length}
+              </span>
             </button>
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={refreshAll}
-              title="Refresh emails"
-              aria-label="Refresh emails"
-              aria-busy={loading || searchLoading}
-              className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-50"
-            >
-              <RefreshCw size={17} className={loading ? 'animate-spin' : ''} />
-            </button>
-          </div>
+
+          <button
+            type="button"
+            onClick={refreshAll}
+            title="Refresh emails"
+            aria-label="Refresh emails"
+            aria-busy={loading || searchLoading}
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-2.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900"
+          >
+            <RefreshCw
+              size={13}
+              className={loading ? 'animate-spin' : ''}
+              aria-hidden="true"
+            />
+            <span>Refresh</span>
+          </button>
         </div>
       )}
 
-      <section className="table-card overflow-hidden bg-white">
+      <section className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
         <div className="overflow-x-auto">
-          <table className="workspace-table w-full min-w-[690px] text-left">
+          <table className="w-full min-w-[690px] border-collapse text-left">
             <thead>
-              <tr className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                <th className="px-5 py-3.5">Recipient</th>
-                <th className="px-5 py-3.5">Subject</th>
-                <th className="px-5 py-3.5">
-                  {search.trim()
-                    ? 'Date'
-                    : activeTab === 'scheduled' && dashboardSection !== 'attention'
-                      ? 'Scheduled for'
-                      : 'Sent at'}
-                </th>
-                <th className="px-5 py-3.5">Status</th>
+              <tr className="border-b border-zinc-200 bg-zinc-50 text-xs font-medium text-zinc-500">
+                <th className="px-4 py-2.5">Recipient</th>
+                <th className="px-4 py-2.5">Subject</th>
+                <th className="px-4 py-2.5">{timeColumnLabel}</th>
+                <th className="px-4 py-2.5">Status</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-zinc-200">
               {searchLoading ? (
                 <tr>
-                  <td colSpan={4} className="py-16 text-center text-sm text-slate-400">
-                    <LoaderCircle className="mx-auto mb-2 animate-spin" size={21} />
-                    Searching emails...
+                  <td colSpan={4} className="py-16 text-center text-sm text-zinc-500">
+                    <LoaderCircle
+                      className="mx-auto mb-2 animate-spin text-[#0f766e]"
+                      size={20}
+                      aria-hidden="true"
+                    />
+                    Searching emails…
                   </td>
                 </tr>
               ) : loading && !campaigns.length ? (
                 <tr>
-                  <td colSpan={4} className="py-16 text-center text-sm text-slate-400">
-                    <LoaderCircle className="mx-auto mb-2 animate-spin" size={21} />
-                    Loading emails...
+                  <td colSpan={4} className="py-16 text-center text-sm text-zinc-500">
+                    <LoaderCircle
+                      className="mx-auto mb-2 animate-spin text-[#0f766e]"
+                      size={20}
+                      aria-hidden="true"
+                    />
+                    Loading emails…
                   </td>
                 </tr>
               ) : visibleRows.length === 0 ? (
@@ -145,16 +175,20 @@ export function EmailsTable() {
                 </tr>
               ) : (
                 visibleRows.map((row) => (
-                  <tr key={row.id} className="group border-b border-slate-100 hover:bg-[#fbfdfb]">
-                    <td className="px-2 py-4 sm:px-3">
-                      <p className="text-sm font-medium text-slate-800">To: {row.email}</p>
-                      <p className="mt-1 text-xs text-slate-400">{row.name}</p>
+                  <tr key={row.id} className="hover:bg-zinc-50">
+                    <td className="px-4 py-3 align-top">
+                      <p className="text-sm font-medium text-zinc-900">{row.email}</p>
+                      <p className="mt-0.5 text-xs text-zinc-500">
+                        {row.name}
+                        <span className="ml-1.5 font-mono text-[11px] text-zinc-400">
+                          ({row.senderId})
+                        </span>
+                      </p>
                     </td>
-                    <td className="max-w-xs truncate px-3 py-4 text-sm text-slate-700">
-                      <span className="ml-1 font-medium">{row.subject}</span>
-                      <span className="text-slate-400"> - {row.name}</span>
+                    <td className="max-w-xs px-4 py-3 align-top text-sm text-zinc-700">
+                      <p className="truncate font-medium text-zinc-800">{row.subject}</p>
                     </td>
-                    <td className="whitespace-nowrap px-3 py-4 text-sm text-slate-500">
+                    <td className="whitespace-nowrap px-4 py-3 align-top font-mono text-xs text-zinc-500 tabular-nums">
                       {formatDate(
                         search.trim()
                           ? row.sentAt || row.scheduledAt
@@ -163,12 +197,14 @@ export function EmailsTable() {
                             : row.scheduledAt,
                       )}
                     </td>
-                    <td className="px-2 py-4 sm:px-3">
+                    <td className="px-4 py-3 align-top">
                       <StatusBadge status={row.status} />
                       {row.errorMessage && (
                         <p
                           title={row.errorMessage}
-                          className="mt-1 max-w-44 truncate text-[11px] text-rose-600"
+                          className={`mt-1.5 text-xs leading-relaxed ${
+                            row.status === 'FAILED' ? 'text-rose-700' : 'text-zinc-500'
+                          } ${dashboardSection === 'attention' ? 'max-w-md' : 'max-w-[240px] truncate'}`}
                         >
                           {row.errorMessage}
                         </p>
@@ -180,15 +216,13 @@ export function EmailsTable() {
             </tbody>
           </table>
         </div>
-        <footer className="flex items-center justify-between border-t border-slate-100 px-5 py-3 text-xs text-slate-400">
-          <span>
+        <footer className="flex items-center justify-between border-t border-zinc-200 bg-zinc-50 px-4 py-2.5 text-xs text-zinc-500">
+          <span className="tabular-nums">
             {visibleRows.length} {visibleRows.length === 1 ? 'email' : 'emails'}
           </span>
-          <span className="flex items-center gap-1.5">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Updates every few seconds
-          </span>
+          <span>Auto-refreshes every 5s</span>
         </footer>
       </section>
-    </>
+    </div>
   );
 }

@@ -2,6 +2,7 @@ import type { Campaign, EmailRow } from '../types';
 import { apiRequest } from './apiClient';
 
 export interface ScheduleCampaignPayload {
+  name?: string;
   subject: string;
   body: string;
   emails: string[];

@@ -1,18 +1,31 @@
-import { useMemo, useState, type FormEvent } from 'react';
-import { ArrowLeft, Clock3, LoaderCircle, Paperclip, UploadCloud } from 'lucide-react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { ArrowLeft, LoaderCircle, Upload, X } from 'lucide-react';
 import { getErrorMessage } from '../../services/apiClient';
 import { campaignApi } from '../../services/campaignApi';
-import { useDashboard } from '../../state/DashboardContext';
+import { useDashboard } from '../../state/useDashboard';
 import { formatDate, toLocalDateTimeInput } from '../../utils/date';
 import { parseAddresses } from '../../utils/email';
+import { AlertBanner } from '../common/AlertBanner';
+
+function formatDurationEstimate(count: number, delaySeconds: number): string {
+  if (count <= 1 || delaySeconds <= 0) return '< 5s';
+  const totalSeconds = (count - 1) * delaySeconds;
+  if (totalSeconds < 60) return `~${totalSeconds}s`;
+  const minutes = Math.round(totalSeconds / 60);
+  if (minutes < 60) return `~${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const remMinutes = minutes % 60;
+  return remMinutes ? `~${hours}h ${remMinutes}m` : `~${hours}h`;
+}
 
 /**
- * Full-screen composer for creating and scheduling an email campaign.
+ * Full-screen editorial composer for creating and scheduling an email campaign.
  */
 export function ComposeModal() {
   const { senders, maxHourlyLimit, minimumDelayMs, setShowCompose, setMessage, loadDashboard } =
     useDashboard();
 
+  const [campaignName, setCampaignName] = useState('');
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
   const [senderId, setSenderId] = useState(senders[0]?.id || '');
@@ -28,14 +41,28 @@ export function ComposeModal() {
   const [hourlyLimit, setHourlyLimit] = useState(senders[0]?.maxEmailsPerHour ?? maxHourlyLimit);
   const senderHourlyLimit = selectedSender?.maxEmailsPerHour ?? maxHourlyLimit;
   const senderMinimumDelayMs = selectedSender?.minimumDelayMs ?? minimumDelayMs;
-  const [showSchedule, setShowSchedule] = useState(false);
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !submitting) {
+        setShowCompose(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [submitting, setShowCompose]);
+
   const parsedEmails = useMemo(() => parseAddresses(addresses), [addresses]);
   const scheduledDate = new Date(startTime);
   const startTimeIsValid = !Number.isNaN(scheduledDate.getTime()) && startTime >= minimumStartTime;
+
+  const removeRecipient = (emailToRemove: string) => {
+    const nextEmails = parsedEmails.filter((email) => email !== emailToRemove);
+    setAddresses(nextEmails.join(', '));
+  };
 
   const loadLeads = async (file: File) => {
     try {
@@ -53,7 +80,7 @@ export function ComposeModal() {
       return;
     }
     if (!parsedEmails.length) {
-      setError('Add at least one valid email address or upload a leads file.');
+      setError('Add at least one valid email address or upload a recipient list.');
       return;
     }
 
@@ -62,6 +89,7 @@ export function ComposeModal() {
     try {
       await campaignApi.scheduleCampaign(
         {
+          ...(campaignName.trim() ? { name: campaignName.trim() } : {}),
           subject,
           body,
           emails: parsedEmails,
@@ -73,7 +101,7 @@ export function ComposeModal() {
         idempotencyKey,
       );
       setIdempotencyKey(crypto.randomUUID());
-      setMessage('Your emails are scheduled. You can follow their status here.');
+      setMessage('Campaign scheduled. Delivery progress updates automatically.');
       void loadDashboard();
       setShowCompose(false);
     } catch (cause) {
@@ -86,29 +114,32 @@ export function ComposeModal() {
   return (
     <section
       aria-labelledby="compose-title"
-      className="compose-shell fixed inset-0 z-40 overflow-y-auto bg-white"
+      className="fixed inset-0 z-40 overflow-y-auto bg-[#fafafa]"
     >
-      <header className="compose-toolbar sticky top-0 z-10 flex h-[68px] items-center justify-between border-b border-slate-100 bg-white px-5 sm:px-10">
+      <header className="sticky top-0 z-10 flex h-14 items-center justify-between border-b border-zinc-200 bg-white/95 px-4 backdrop-blur-sm sm:px-8">
         <div className="flex items-center gap-3">
           <button
             type="button"
             onClick={() => setShowCompose(false)}
-            aria-label="Back to inbox"
-            className="rounded-md p-1 text-slate-600 hover:bg-slate-100"
+            disabled={submitting}
+            aria-label="Back to workspace"
+            className="rounded-md p-1.5 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 disabled:opacity-50"
           >
-            <ArrowLeft size={19} />
+            <ArrowLeft size={17} aria-hidden="true" />
           </button>
-          <h1 id="compose-title" className="text-base font-medium text-slate-800">
-            Compose New Email
+          <h1 id="compose-title" className="text-sm font-semibold text-zinc-900">
+            Compose campaign
           </h1>
         </div>
-        <div className="compose-header-actions flex items-center gap-2">
+
+        <div className="flex items-center gap-2.5">
           <label
             htmlFor="lead-file"
-            title="Upload recipient list"
-            className="cursor-pointer rounded-md p-2 text-emerald-600 hover:bg-emerald-50"
+            className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
           >
-            <Paperclip size={18} />
+            <Upload size={13} aria-hidden="true" />
+            <span className="hidden sm:inline">Import CSV / TXT</span>
+            <span className="sm:hidden">Import</span>
           </label>
           <input
             id="lead-file"
@@ -121,178 +152,201 @@ export function ComposeModal() {
               event.currentTarget.value = '';
             }}
           />
-          <button
-            type="button"
-            onClick={() => setShowSchedule(!showSchedule)}
-            aria-expanded={showSchedule}
-            aria-label="Choose send time"
-            className="rounded-md p-2 text-emerald-600 hover:bg-emerald-50"
-          >
-            <Clock3 size={18} />
-          </button>
+
           <button
             form="compose-form"
             type="submit"
             disabled={submitting || !senders.length || !startTimeIsValid}
-            className="inline-flex items-center gap-2 rounded-full border border-emerald-500 px-5 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-60"
+            className="inline-flex h-9 items-center gap-2 rounded-lg bg-[#0f766e] px-4 text-xs font-medium text-white hover:bg-[#115e59] disabled:opacity-55"
           >
-            {submitting ? <LoaderCircle className="animate-spin" size={15} /> : null}
-            {submitting ? 'Scheduling...' : 'Send Later'}
+            {submitting && <LoaderCircle className="animate-spin" size={14} aria-hidden="true" />}
+            <span>{submitting ? 'Scheduling…' : 'Schedule campaign'}</span>
           </button>
         </div>
-
-        {showSchedule && (
-          <div className="absolute right-5 top-14 z-20 w-72 rounded-xl border border-slate-200 bg-white p-4 shadow-lg sm:right-10">
-            <p className="mb-2 text-sm font-medium text-slate-800">Send later</p>
-            <label className="block text-xs text-slate-500">
-              Pick a date &amp; time
-              <input
-                type="datetime-local"
-                min={minimumStartTime}
-                value={startTime}
-                onChange={(event) => setStartTime(event.target.value)}
-                className="form-input mt-2"
-              />
-            </label>
-            <button
-              type="button"
-              onClick={() => setShowSchedule(false)}
-              className="float-right mt-4 rounded-full border border-emerald-500 px-4 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-50"
-            >
-              Done
-            </button>
-          </div>
-        )}
       </header>
 
       <form
         id="compose-form"
         onSubmit={(event) => void handleSubmit(event)}
-        className="compose-form mx-auto max-w-4xl px-5 pb-10 sm:px-10"
+        className="mx-auto my-6 max-w-3xl px-4 pb-10 sm:px-6"
       >
-        <label className="flex min-h-14 items-center gap-3 border-b border-slate-100 text-sm">
-          <span className="w-10 shrink-0 text-slate-600">From</span>
-          <select
-            value={senderId}
-            onChange={(event) => {
-              const nextSender = senders.find((sender) => sender.id === event.target.value);
-              setSenderId(event.target.value);
-              if (nextSender) {
-                setDelaySeconds(Math.ceil(nextSender.minimumDelayMs / 1000));
-                setHourlyLimit(nextSender.maxEmailsPerHour);
-              }
-            }}
-            required
-            className="max-w-full rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none"
-          >
-            {senders.map((sender) => (
-              <option key={sender.id} value={sender.id}>
-                {sender.name} · {sender.from}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white">
+          <div className="divide-y divide-zinc-200">
+            <label className="flex min-h-12 items-center gap-4 px-5 py-2.5 text-sm">
+              <span className="w-20 shrink-0 text-xs font-medium text-zinc-500">From</span>
+              <select
+                value={senderId}
+                onChange={(event) => {
+                  const nextSender = senders.find((sender) => sender.id === event.target.value);
+                  setSenderId(event.target.value);
+                  if (nextSender) {
+                    setDelaySeconds(Math.ceil(nextSender.minimumDelayMs / 1000));
+                    setHourlyLimit(nextSender.maxEmailsPerHour);
+                  }
+                }}
+                required
+                className="w-full rounded-md border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-sm text-zinc-900 focus:border-[#0f766e] focus:bg-white focus:outline-none"
+              >
+                {senders.map((sender) => (
+                  <option key={sender.id} value={sender.id}>
+                    {sender.name} ({sender.from})
+                  </option>
+                ))}
+              </select>
+            </label>
 
-        <div className="flex gap-3 border-b border-slate-100 py-3 text-sm">
-          <label htmlFor="recipients" className="w-10 shrink-0 pt-1 text-slate-600">
-            To
-          </label>
-          <div className="min-w-0 flex-1">
-            <div className="mb-2 flex flex-wrap gap-1.5">
-              {parsedEmails.slice(0, 8).map((email) => (
-                <span
-                  key={email}
-                  className="rounded-full border border-emerald-400 bg-emerald-50 px-2.5 py-1 text-xs text-slate-700"
-                >
-                  {email}
-                </span>
-              ))}
-              {parsedEmails.length > 8 && (
-                <span className="rounded-full border border-emerald-400 px-2.5 py-1 text-xs text-slate-600">
-                  +{parsedEmails.length - 8}
-                </span>
-              )}
+            <label className="flex min-h-12 items-center gap-4 px-5 py-2.5 text-sm">
+              <span className="w-20 shrink-0 text-xs font-medium text-zinc-500">Campaign</span>
+              <input
+                value={campaignName}
+                onChange={(event) => setCampaignName(event.target.value)}
+                maxLength={120}
+                className="w-full bg-transparent text-sm text-zinc-900 placeholder:text-zinc-400 focus:outline-none"
+                placeholder="Optional campaign label"
+              />
+            </label>
+
+            <div className="flex items-start gap-4 px-5 py-3 text-sm">
+              <label
+                htmlFor="recipients"
+                className="w-20 shrink-0 pt-1 text-xs font-medium text-zinc-500"
+              >
+                To
+              </label>
+              <div className="min-w-0 flex-1">
+                {parsedEmails.length > 0 && (
+                  <div className="mb-2 flex flex-wrap gap-1.5">
+                    {parsedEmails.slice(0, 10).map((email) => (
+                      <span
+                        key={email}
+                        className="inline-flex items-center gap-1 rounded-md border border-zinc-200 bg-zinc-50 px-2 py-0.5 font-mono text-xs text-zinc-700"
+                      >
+                        <span>{email}</span>
+                        <button
+                          type="button"
+                          onClick={() => removeRecipient(email)}
+                          aria-label={`Remove ${email}`}
+                          className="rounded p-0.5 text-zinc-400 hover:bg-zinc-200 hover:text-zinc-800"
+                        >
+                          <X size={11} aria-hidden="true" />
+                        </button>
+                      </span>
+                    ))}
+                    {parsedEmails.length > 10 && (
+                      <span className="inline-flex items-center rounded-md border border-zinc-200 bg-white px-2 py-0.5 font-mono text-xs text-zinc-500 tabular-nums">
+                        +{parsedEmails.length - 10} more
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                <textarea
+                  id="recipients"
+                  value={addresses}
+                  onChange={(event) => setAddresses(event.target.value)}
+                  rows={Math.min(4, Math.max(2, Math.ceil(parsedEmails.length / 6)))}
+                  className="w-full resize-none border-0 bg-transparent text-sm text-zinc-900 placeholder:text-zinc-400 focus:outline-none"
+                  placeholder="Paste comma- or newline-separated emails, or import a CSV / TXT file"
+                />
+
+                <div className="mt-1 flex items-center justify-between text-xs text-zinc-500">
+                  <span className="font-mono tabular-nums">
+                    {parsedEmails.length} unique recipient{parsedEmails.length === 1 ? '' : 's'}
+                  </span>
+                </div>
+              </div>
             </div>
-            <textarea
-              id="recipients"
-              value={addresses}
-              onChange={(event) => setAddresses(event.target.value)}
-              rows={Math.min(3, Math.max(1, Math.ceil(parsedEmails.length / 8)))}
-              className="w-full resize-none border-0 bg-transparent text-sm outline-none placeholder:text-slate-400"
-              placeholder="Enter email addresses or upload a list"
-            />
-            <p className="text-[11px] text-slate-400">
-              {parsedEmails.length} unique address{parsedEmails.length === 1 ? '' : 'es'}
-            </p>
+
+            <label className="flex min-h-12 items-center gap-4 px-5 py-2.5 text-sm">
+              <span className="w-20 shrink-0 text-xs font-medium text-zinc-500">Subject</span>
+              <input
+                value={subject}
+                onChange={(event) => setSubject(event.target.value)}
+                required
+                maxLength={255}
+                className="w-full bg-transparent text-sm font-medium text-zinc-900 placeholder:font-normal placeholder:text-zinc-400 focus:outline-none"
+                placeholder="Write a clear subject line"
+              />
+            </label>
+
+            <div className="bg-zinc-50/70 px-5 py-3.5">
+              <div className="grid gap-3 sm:grid-cols-3">
+                <label className="block text-xs font-medium text-zinc-600">
+                  Start time
+                  <input
+                    type="datetime-local"
+                    min={minimumStartTime}
+                    value={startTime}
+                    onChange={(event) => setStartTime(event.target.value)}
+                    required
+                    className="mt-1.5 block w-full rounded-md border border-zinc-200 bg-white px-2.5 py-1.5 font-mono text-xs text-zinc-900 focus:border-[#0f766e] focus:outline-none"
+                  />
+                </label>
+
+                <label className="block text-xs font-medium text-zinc-600">
+                  Delay between sends (sec)
+                  <input
+                    type="number"
+                    value={delaySeconds}
+                    min={Math.ceil(senderMinimumDelayMs / 1000)}
+                    step={1}
+                    onChange={(event) => setDelaySeconds(Number(event.target.value))}
+                    required
+                    className="mt-1.5 block w-full rounded-md border border-zinc-200 bg-white px-2.5 py-1.5 font-mono text-xs text-zinc-900 tabular-nums focus:border-[#0f766e] focus:outline-none"
+                  />
+                </label>
+
+                <label className="block text-xs font-medium text-zinc-600">
+                  Hourly cap (max {senderHourlyLimit})
+                  <input
+                    type="number"
+                    value={hourlyLimit}
+                    min={1}
+                    max={senderHourlyLimit}
+                    onChange={(event) => setHourlyLimit(Number(event.target.value))}
+                    required
+                    className="mt-1.5 block w-full rounded-md border border-zinc-200 bg-white px-2.5 py-1.5 font-mono text-xs text-zinc-900 tabular-nums focus:border-[#0f766e] focus:outline-none"
+                  />
+                </label>
+              </div>
+
+              <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 font-mono text-xs text-zinc-500 tabular-nums">
+                <span>
+                  {startTimeIsValid
+                    ? `Starts ${formatDate(scheduledDate.toISOString())}`
+                    : 'Choose a date and time in the future'}
+                </span>
+                {parsedEmails.length > 0 && (
+                  <span>
+                    Est. duration: {formatDurationEstimate(parsedEmails.length, delaySeconds)}{' '}
+                    across {parsedEmails.length}{' '}
+                    {parsedEmails.length === 1 ? 'recipient' : 'recipients'}
+                  </span>
+                )}
+              </div>
+            </div>
           </div>
-          <label
-            htmlFor="lead-file"
-            className="hidden cursor-pointer items-center gap-1 self-start pt-1 text-xs text-emerald-600 hover:text-emerald-700 sm:flex"
-          >
-            <UploadCloud size={15} /> Upload List
-          </label>
-        </div>
 
-        <label className="flex min-h-12 items-center gap-3 border-b border-slate-100 text-sm">
-          <span className="w-10 shrink-0 text-slate-600">Subject</span>
-          <input
-            value={subject}
-            onChange={(event) => setSubject(event.target.value)}
-            required
-            maxLength={255}
-            className="w-full bg-transparent outline-none placeholder:text-slate-400"
-            placeholder="Subject"
-          />
-        </label>
-
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-slate-100 py-3 text-xs text-slate-600">
-          <label className="flex items-center gap-2">
-            Delay between emails
-            <input
-              type="number"
-              value={delaySeconds}
-              min={Math.ceil(senderMinimumDelayMs / 1000)}
-              step={1}
-              onChange={(event) => setDelaySeconds(Number(event.target.value))}
+          <div className="border-t border-zinc-200 p-5">
+            <label htmlFor="email-body" className="sr-only">
+              Email body
+            </label>
+            <textarea
+              id="email-body"
+              value={body}
+              onChange={(event) => setBody(event.target.value)}
               required
-              className="w-14 rounded-md border border-slate-200 px-2 py-1.5 text-center outline-none focus:border-emerald-400"
+              className="min-h-[340px] w-full resize-y bg-transparent text-sm leading-6 text-zinc-900 placeholder:text-zinc-400 focus:outline-none"
+              placeholder="Write your email message…"
             />
-            sec
-          </label>
-          <label className="flex items-center gap-2">
-            Hourly Limit
-            <input
-              type="number"
-              value={hourlyLimit}
-              min={1}
-              max={senderHourlyLimit}
-              onChange={(event) => setHourlyLimit(Number(event.target.value))}
-              required
-              className="w-16 rounded-md border border-slate-200 px-2 py-1.5 text-center outline-none focus:border-emerald-400"
-            />
-          </label>
-          <span className="text-slate-400">Up to {senderHourlyLimit} per sender / hour</span>
+          </div>
         </div>
-
-        <textarea
-          value={body}
-          onChange={(event) => setBody(event.target.value)}
-          required
-          className="mt-5 min-h-[48vh] w-full resize-y rounded-lg bg-[#fafafa] p-5 text-sm leading-6 text-slate-700 outline-none placeholder:text-slate-400 focus:ring-1 focus:ring-emerald-100"
-          placeholder="Type Your Reply..."
-        />
 
         {error && (
-          <p role="alert" className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">
-            {error}
-          </p>
+          <div className="mt-4">
+            <AlertBanner tone="error">{error}</AlertBanner>
+          </div>
         )}
-
-        <p className="mt-2 text-right text-xs text-slate-400">
-          {startTimeIsValid
-            ? `Scheduled for ${formatDate(scheduledDate.toISOString())}`
-            : 'Choose a date and time in the future'}
-        </p>
       </form>
     </section>
   );

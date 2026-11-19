@@ -1,48 +1,21 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useReducer,
-  type ReactNode,
-} from 'react';
+import { useCallback, useEffect, useMemo, useReducer, type ReactNode } from 'react';
 import { ApiError, getErrorMessage } from '../services/apiClient';
 import { campaignApi } from '../services/campaignApi';
 import { senderApi } from '../services/senderApi';
-import type {
-  ActivityStatus,
-  Campaign,
-  DashboardSection,
-  DashboardTab,
-  EmailRow,
-  Sender,
-} from '../types';
-import { useAuth } from './AuthContext';
-
-interface DashboardState {
-  campaigns: Campaign[];
-  senders: Sender[];
-  maxHourlyLimit: number;
-  minimumDelayMs: number;
-  activeTab: DashboardTab;
-  dashboardSection: DashboardSection;
-  selectedCampaignId: number | null;
-  search: string;
-  searchRefreshVersion: number;
-  searchResult: { query: string; rows: EmailRow[] } | null;
-  searchLoading: boolean;
-  loading: boolean;
-  activityStatus: ActivityStatus;
-  showCompose: boolean;
-  showSenders: boolean;
-  message: string;
-  error: string;
-}
+import type { Campaign, DashboardTab, EmailRow, Sender } from '../types';
+import { DashboardContext, type DashboardState } from './dashboardContextDef';
+import { useAuth } from './useAuth';
 
 type DashboardAction =
   | { type: 'SET_LOADING'; loading: boolean }
-  | { type: 'LOAD_SUCCESS'; campaigns: Campaign[]; senders: Sender[]; maxHourlyLimit: number; minimumDelayMs: number; announceRefresh: boolean }
+  | {
+      type: 'LOAD_SUCCESS';
+      campaigns: Campaign[];
+      senders: Sender[];
+      maxHourlyLimit: number;
+      minimumDelayMs: number;
+      announceRefresh: boolean;
+    }
   | { type: 'LOAD_ERROR'; message: string }
   | { type: 'SET_TAB'; tab: DashboardTab }
   | { type: 'SHOW_ACTIVITY'; tab: DashboardTab }
@@ -50,6 +23,7 @@ type DashboardAction =
   | { type: 'SHOW_ATTENTION' }
   | { type: 'SHOW_CAMPAIGN'; campaignId: number }
   | { type: 'SET_SEARCH'; query: string }
+  | { type: 'CLEAR_SEARCH' }
   | { type: 'REFRESH_SEARCH' }
   | { type: 'SEARCH_SUCCESS'; query: string; rows: EmailRow[] }
   | { type: 'SEARCH_DONE' }
@@ -109,7 +83,12 @@ function dashboardReducer(state: DashboardState, action: DashboardAction): Dashb
         error: action.message,
       };
     case 'SET_TAB':
-      return { ...state, activeTab: action.tab };
+      return {
+        ...state,
+        dashboardSection: 'activity',
+        selectedCampaignId: null,
+        activeTab: action.tab,
+      };
     case 'SHOW_ACTIVITY':
       return {
         ...state,
@@ -161,6 +140,14 @@ function dashboardReducer(state: DashboardState, action: DashboardAction): Dashb
         searchResult: null,
         searchLoading: Boolean(action.query.trim()),
       };
+    case 'CLEAR_SEARCH':
+      return {
+        ...state,
+        search: '',
+        searchRefreshVersion: 0,
+        searchResult: null,
+        searchLoading: false,
+      };
     case 'REFRESH_SEARCH':
       return {
         ...state,
@@ -189,31 +176,6 @@ function dashboardReducer(state: DashboardState, action: DashboardAction): Dashb
       return state;
   }
 }
-
-interface DashboardContextValue extends DashboardState {
-  rows: EmailRow[];
-  scheduledRows: EmailRow[];
-  sentRows: EmailRow[];
-  deliveredCount: number;
-  failedCount: number;
-  selectedCampaign: Campaign | null;
-  visibleRows: EmailRow[];
-  loadDashboard: (quiet?: boolean, announceRefresh?: boolean) => Promise<void>;
-  refreshAll: () => void;
-  setActiveTab: (tab: DashboardTab) => void;
-  showActivity: (tab: DashboardTab) => void;
-  showCampaigns: () => void;
-  showAttention: () => void;
-  showCampaign: (campaignId: number) => void;
-  setSearch: (query: string) => void;
-  setShowCompose: (open: boolean) => void;
-  setShowSenders: (open: boolean) => void;
-  setMessage: (message: string) => void;
-  setError: (error: string) => void;
-  resetDashboard: () => void;
-}
-
-const DashboardContext = createContext<DashboardContextValue | null>(null);
 
 export function DashboardProvider({ children }: { children: ReactNode }) {
   const { user, clearUser, loadUser } = useAuth();
@@ -251,7 +213,6 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
     [clearUser],
   );
 
-  // Initial fetch & polling when signed in
   useEffect(() => {
     if (!user) return;
     void loadDashboard();
@@ -259,7 +220,6 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
     return () => window.clearInterval(timer);
   }, [user, loadDashboard]);
 
-  // Debounced search effect
   useEffect(() => {
     const query = state.search.trim();
     if (!user || !query) return;
@@ -283,7 +243,6 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
     };
   }, [user, state.search, state.searchRefreshVersion]);
 
-  // Handle Slack OAuth redirect query param
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get('slack') === 'connected') {
       void loadUser();
@@ -389,6 +348,7 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
         showAttention: () => dispatch({ type: 'SHOW_ATTENTION' }),
         showCampaign: (campaignId) => dispatch({ type: 'SHOW_CAMPAIGN', campaignId }),
         setSearch: (query) => dispatch({ type: 'SET_SEARCH', query }),
+        clearSearch: () => dispatch({ type: 'CLEAR_SEARCH' }),
         setShowCompose: (open) => dispatch({ type: 'SET_SHOW_COMPOSE', open }),
         setShowSenders: (open) => dispatch({ type: 'SET_SHOW_SENDERS', open }),
         setMessage: (message) => dispatch({ type: 'SET_MESSAGE', message }),
@@ -399,12 +359,4 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
       {children}
     </DashboardContext.Provider>
   );
-}
-
-export function useDashboard(): DashboardContextValue {
-  const ctx = useContext(DashboardContext);
-  if (!ctx) {
-    throw new Error('useDashboard must be used within a DashboardProvider.');
-  }
-  return ctx;
 }

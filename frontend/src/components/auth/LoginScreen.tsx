@@ -1,138 +1,190 @@
 import { MotionConfig, motion } from 'framer-motion';
-import { CheckCircle2, Clock3, Mail, Send } from 'lucide-react';
+import { Send } from 'lucide-react';
 import { env } from '../../config/env';
-import { useAuth } from '../../state/AuthContext';
-import { updateLandingPointer } from '../../utils/pointerEffects';
+import { useAuth } from '../../state/useAuth';
+import { AlertBanner } from '../common/AlertBanner';
+import { StatusBadge } from '../common/StatusBadge';
+
+const SPECIMEN_ROWS = [
+  {
+    recipient: 'maya.chen@acme.example',
+    campaign: 'Q4 Product Changelog',
+    timestamp: '09:00:00 UTC',
+    status: 'SENT',
+  },
+  {
+    recipient: 'd.patel@northstar.example',
+    campaign: 'Q4 Product Changelog',
+    timestamp: '09:00:02 UTC',
+    status: 'SENT',
+  },
+  {
+    recipient: 'elena@kestrel.example',
+    campaign: 'Q4 Product Changelog',
+    timestamp: '09:00:04 UTC',
+    status: 'PENDING',
+  },
+  {
+    recipient: 'marcus@fieldwork.example',
+    campaign: 'Q4 Product Changelog',
+    timestamp: '09:00:06 UTC',
+    status: 'THROTTLED_DELAYED',
+  },
+] as const;
+
+function GoogleLogo() {
+  return (
+    <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        fill="#4285F4"
+        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+      />
+      <path
+        fill="#34A853"
+        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+      />
+      <path
+        fill="#FBBC05"
+        d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+      />
+      <path
+        fill="#EA4335"
+        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+      />
+    </svg>
+  );
+}
 
 /**
- * Public sign-in view with Google OAuth and optional local preview login.
+ * Asymmetric two-column sign-in view paired with a restrained live-HTML queue specimen.
  */
 export function LoginScreen() {
   const { authError, demoEnabled, demoLoading, startDemoLogin } = useAuth();
 
   return (
     <MotionConfig reducedMotion="user">
-      <main
-        className="login-shell flex min-h-screen items-center justify-center px-5 py-10"
-        onPointerMove={(event) => updateLandingPointer(event)}
-        onPointerLeave={(event) => updateLandingPointer(event, true)}
-      >
-        <motion.div
-          className="login-layout"
-          initial={{ opacity: 0, y: 14 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.45, ease: [0.2, 0.7, 0.2, 1] }}
-        >
-          <section className="login-card">
-            <a href="/" className="login-brand">
-              <span className="login-brand-mark">
-                <Send size={17} />
+      <main className="grid min-h-screen bg-white lg:grid-cols-[minmax(420px,46%)_1fr]">
+        <section className="flex flex-col justify-between border-b border-zinc-200 px-6 py-8 sm:px-12 sm:py-10 lg:border-b-0 lg:border-r">
+          <div>
+            <a
+              href="/"
+              className="inline-flex items-center gap-2.5 text-sm font-semibold tracking-tight text-zinc-900"
+            >
+              <span
+                className="flex h-7 w-7 items-center justify-center rounded-md bg-[#0f766e] text-white"
+                aria-hidden="true"
+              >
+                <Send size={14} />
               </span>
-              ReachInbox
+              <span>ReachInbox</span>
             </a>
-            <div className="login-copy">
-              <p className="eyebrow">EMAIL WORKSPACE</p>
-              <h1>Good to see you.</h1>
-              <p>Sign in to keep your email schedule moving.</p>
-            </div>
+          </div>
+
+          <motion.div
+            className="mx-auto my-12 w-full max-w-sm lg:my-0"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.25 }}
+          >
+            <h1 className="text-2xl font-semibold tracking-[-0.025em] text-zinc-900 sm:text-[28px]">
+              Sign in to ReachInbox
+            </h1>
+            <p className="mt-2.5 text-sm leading-6 text-zinc-600">
+              Schedule campaigns, throttle sends per SMTP account, and monitor delivery status.
+            </p>
+
             {authError && (
-              <p role="alert" className="mt-6 rounded-lg bg-rose-50 p-3 text-sm text-rose-700">
-                {authError}
-              </p>
-            )}
-            <a className="google-login-button" href={`${env.apiUrl}/auth/google`}>
-              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white text-sm font-bold text-blue-600">
-                G
-              </span>
-              Continue with Google
-            </a>
-            {demoEnabled && (
-              <div className="demo-login">
-                <button
-                  type="button"
-                  onClick={() => void startDemoLogin()}
-                  disabled={demoLoading}
-                >
-                  {demoLoading ? 'Opening preview...' : 'Open local preview'}
-                </button>
-                <p>Local-only preview. Google sign-in is unchanged.</p>
+              <div className="mt-5">
+                <AlertBanner tone="error">{authError}</AlertBanner>
               </div>
             )}
-            <p className="login-footnote">Your workspace is private to your account.</p>
-          </section>
 
-          <motion.aside
-            className="login-preview"
-            aria-label="Scheduler overview"
-            initial={{ opacity: 0, x: 18 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.55, delay: 0.12, ease: [0.2, 0.7, 0.2, 1] }}
-          >
-            <div className="fluid-scene" aria-hidden="true">
-              <span className="fluid-orb fluid-orb-one" />
-              <span className="fluid-orb fluid-orb-two" />
-              <span className="fluid-ring" />
+            <div className="mt-7 space-y-3">
+              <a
+                className="flex min-h-[44px] w-full items-center justify-center gap-2.5 rounded-lg border border-zinc-300 bg-white px-4 py-2.5 text-sm font-medium text-zinc-900 shadow-sm hover:border-zinc-400 hover:bg-zinc-50"
+                href={`${env.apiUrl}/auth/google`}
+              >
+                <GoogleLogo />
+                <span>Continue with Google</span>
+              </a>
+
+              {demoEnabled && (
+                <div className="pt-1">
+                  <button
+                    type="button"
+                    onClick={() => void startDemoLogin()}
+                    disabled={demoLoading}
+                    className="flex min-h-[44px] w-full items-center justify-center rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-sm font-medium text-zinc-700 hover:border-zinc-300 hover:bg-zinc-100 disabled:opacity-60"
+                  >
+                    {demoLoading ? 'Opening local preview...' : 'Open local preview'}
+                  </button>
+                  <p className="mt-2 text-xs text-zinc-500">
+                    Local-only preview session. Google sign-in remains unchanged.
+                  </p>
+                </div>
+              )}
             </div>
-            <p className="preview-kicker">
-              <span /> SCHEDULER OVERVIEW
-            </p>
-            <h2>Good outreach starts with good timing.</h2>
-            <p className="preview-description">
-              Keep every message organized, paced, and easy to follow.
-            </p>
-            <motion.div
-              className="preview-flow"
-              initial="hidden"
-              animate="visible"
-              variants={{
-                hidden: {},
-                visible: { transition: { staggerChildren: 0.1, delayChildren: 0.25 } },
-              }}
-            >
-              <motion.div
-                variants={{ hidden: { opacity: 0, y: 8 }, visible: { opacity: 1, y: 0 } }}
-                transition={{ duration: 0.3 }}
-              >
-                <span className="flow-icon">
-                  <Clock3 size={16} />
+          </motion.div>
+
+          <p className="text-xs text-zinc-500">
+            Private per-account workspace with AES-256-GCM encrypted SMTP credentials.
+          </p>
+        </section>
+
+        <aside
+          aria-label="Queue dispatch preview"
+          className="dot-grid-surface flex flex-col justify-center px-6 py-10 sm:px-12 lg:px-14"
+        >
+          <motion.div
+            className="mx-auto w-full max-w-xl"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.25, delay: 0.05 }}
+          >
+            <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200 bg-zinc-50/80 px-4 py-3">
+                <div className="flex items-center gap-2.5">
+                  <span className="rounded border border-zinc-200 bg-white px-2 py-0.5 font-mono text-xs font-medium text-zinc-700">
+                    email-queue
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 text-xs font-medium text-zinc-600">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-600" aria-hidden="true" />
+                    Worker active
+                  </span>
+                </div>
+                <span className="font-mono text-xs text-zinc-500 tabular-nums">
+                  42 / 200 hourly
                 </span>
-                <span>
-                  <strong>Schedule</strong>
-                  <small>Choose when a campaign begins</small>
-                </span>
-                <b>01</b>
-              </motion.div>
-              <motion.div
-                variants={{ hidden: { opacity: 0, y: 8 }, visible: { opacity: 1, y: 0 } }}
-                transition={{ duration: 0.3 }}
-              >
-                <span className="flow-icon">
-                  <Mail size={16} />
-                </span>
-                <span>
-                  <strong>Send steadily</strong>
-                  <small>Respect your sender's limits</small>
-                </span>
-                <b>02</b>
-              </motion.div>
-              <motion.div
-                variants={{ hidden: { opacity: 0, y: 8 }, visible: { opacity: 1, y: 0 } }}
-                transition={{ duration: 0.3 }}
-              >
-                <span className="flow-icon">
-                  <CheckCircle2 size={16} />
-                </span>
-                <span>
-                  <strong>Track progress</strong>
-                  <small>See scheduled and sent emails</small>
-                </span>
-                <b>03</b>
-              </motion.div>
-            </motion.div>
-            <p className="preview-note">A simple workspace for reliable email scheduling.</p>
-            <p className="tech-stack-note">TypeScript · Express · BullMQ · Redis · MySQL · React</p>
-          </motion.aside>
-        </motion.div>
+              </div>
+
+              <div className="divide-y divide-zinc-200">
+                {SPECIMEN_ROWS.map((row) => (
+                  <div
+                    key={row.recipient}
+                    className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate font-medium text-zinc-900">{row.recipient}</p>
+                      <p className="truncate text-xs text-zinc-500">{row.campaign}</p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="font-mono text-xs text-zinc-500 tabular-nums">
+                        {row.timestamp}
+                      </span>
+                      <StatusBadge status={row.status} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-zinc-200 bg-zinc-50 px-4 py-2.5 font-mono text-[11px] text-zinc-500 tabular-nums">
+                <span>2.0s min spacing</span>
+                <span>Idempotent jobs</span>
+                <span>Redis + MySQL recovery</span>
+              </div>
+            </div>
+          </motion.div>
+        </aside>
       </main>
     </MotionConfig>
   );

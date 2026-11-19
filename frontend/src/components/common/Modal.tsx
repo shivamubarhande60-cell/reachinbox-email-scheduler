@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
 
 interface ModalProps {
   titleId: string;
@@ -9,7 +9,7 @@ interface ModalProps {
 }
 
 /**
- * Accessible modal backdrop and centered dialog container.
+ * Accessible modal backdrop and centered dialog container with Escape-key dismissal.
  */
 export function Modal({
   titleId,
@@ -18,9 +18,19 @@ export function Modal({
   maxWidthClass = 'max-w-3xl',
   children,
 }: ModalProps) {
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !busy) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [busy, onClose]);
+
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/40 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-zinc-950/35 p-4 backdrop-blur-[2px]"
       role="presentation"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget && !busy) onClose();
@@ -30,7 +40,7 @@ export function Modal({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className={`my-auto w-full ${maxWidthClass} rounded-2xl bg-white shadow-2xl`}
+        className={`my-auto w-full ${maxWidthClass} rounded-xl border border-zinc-200 bg-white shadow-xl`}
       >
         {children}
       </section>
