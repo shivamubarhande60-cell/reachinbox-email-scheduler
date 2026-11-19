@@ -60,7 +60,7 @@ export function ActivityOverview() {
 
   return (
     <section aria-label="Email activity summary">
-      <div className="grid grid-cols-2 divide-y divide-zinc-200 overflow-hidden rounded-lg border border-zinc-200 bg-white md:grid-cols-4 md:divide-x md:divide-y-0">
+      <div className="grid grid-cols-2 divide-y divide-zinc-200 overflow-hidden rounded-lg border border-zinc-200 bg-white md:grid-cols-4 md:divide-x md:divide-y-0 dark:divide-zinc-800 dark:border-zinc-800 dark:bg-[#111113]">
         {stats.map((stat) => (
           <button
             key={stat.label}
@@ -68,18 +68,20 @@ export function ActivityOverview() {
             onClick={stat.onClick}
             aria-pressed={stat.active}
             aria-label={`Show ${stat.label.toLowerCase()} activity`}
-            className={`relative flex flex-col items-start px-4 py-3.5 text-left hover:bg-zinc-50 ${
-              stat.active ? 'bg-zinc-50/70' : 'bg-white'
+            className={`relative flex flex-col items-start px-4 py-3.5 text-left hover:bg-zinc-50 dark:hover:bg-zinc-900/60 ${
+              stat.active ? 'bg-zinc-50/70 dark:bg-zinc-900/80' : 'bg-white dark:bg-[#111113]'
             }`}
           >
-            <span className="text-xs font-medium text-zinc-500">{stat.label}</span>
-            <span className="mt-1.5 text-2xl font-semibold tracking-tight text-zinc-900 tabular-nums">
+            <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
+              {stat.label}
+            </span>
+            <span className="mt-1.5 text-2xl font-semibold tracking-tight text-zinc-900 tabular-nums dark:text-zinc-100">
               {stat.value}
             </span>
-            <span className="mt-1 text-xs text-zinc-500">{stat.detail}</span>
+            <span className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{stat.detail}</span>
             {stat.active && (
               <span
-                className="absolute inset-x-0 bottom-0 h-0.5 bg-[#0f766e]"
+                className="absolute inset-x-0 bottom-0 h-0.5 bg-[#0f766e] dark:bg-[#14b8a6]"
                 aria-hidden="true"
               />
             )}

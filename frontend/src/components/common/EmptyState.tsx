@@ -14,13 +14,15 @@ export function EmptyState({ title, description, action }: EmptyStateProps) {
   return (
     <div className="px-6 py-14 text-center">
       <div
-        className="mx-auto flex h-10 w-10 items-center justify-center rounded-lg border border-zinc-200 bg-zinc-50 text-zinc-500"
+        className="mx-auto flex h-10 w-10 items-center justify-center rounded-lg border border-zinc-200 bg-zinc-50 text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400"
         aria-hidden="true"
       >
         <Mail size={18} />
       </div>
-      <p className="mt-3 text-sm font-medium text-zinc-900">{title}</p>
-      <p className="mx-auto mt-1 max-w-sm text-xs text-zinc-500">{description}</p>
+      <p className="mt-3 text-sm font-medium text-zinc-900 dark:text-zinc-100">{title}</p>
+      <p className="mx-auto mt-1 max-w-sm text-xs text-zinc-500 dark:text-zinc-400">
+        {description}
+      </p>
       {action && <div className="mt-4">{action}</div>}
     </div>
   );

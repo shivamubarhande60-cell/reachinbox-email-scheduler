@@ -5,6 +5,7 @@ import type {
   DashboardSection,
   DashboardTab,
   EmailRow,
+  EmailSortOrder,
   Sender,
 } from '../types';
 
@@ -16,14 +17,20 @@ export interface DashboardState {
   activeTab: DashboardTab;
   dashboardSection: DashboardSection;
   selectedCampaignId: number | null;
+  selectedEmail: EmailRow | null;
   search: string;
   searchRefreshVersion: number;
   searchResult: { query: string; rows: EmailRow[] } | null;
   searchLoading: boolean;
+  statusFilter: string;
+  senderFilter: string;
+  sortOrder: EmailSortOrder;
   loading: boolean;
   activityStatus: ActivityStatus;
   showCompose: boolean;
   showSenders: boolean;
+  showCommandPalette: boolean;
+  showMobileNav: boolean;
   message: string;
   error: string;
 }
@@ -42,11 +49,18 @@ export interface DashboardContextValue extends DashboardState {
   showActivity: (tab: DashboardTab) => void;
   showCampaigns: () => void;
   showAttention: () => void;
+  showAnalytics: () => void;
   showCampaign: (campaignId: number) => void;
+  setSelectedEmail: (row: EmailRow | null) => void;
   setSearch: (query: string) => void;
   clearSearch: () => void;
+  setStatusFilter: (status: string) => void;
+  setSenderFilter: (senderId: string) => void;
+  setSortOrder: (order: EmailSortOrder) => void;
   setShowCompose: (open: boolean) => void;
   setShowSenders: (open: boolean) => void;
+  setShowCommandPalette: (open: boolean) => void;
+  setShowMobileNav: (open: boolean) => void;
   setMessage: (message: string) => void;
   setError: (error: string) => void;
   resetDashboard: () => void;

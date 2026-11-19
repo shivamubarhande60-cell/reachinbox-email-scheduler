@@ -30,7 +30,7 @@ export function Modal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-zinc-950/35 p-4 backdrop-blur-[2px]"
+      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-zinc-950/45 p-4 backdrop-blur-[2px] dark:bg-black/65"
       role="presentation"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget && !busy) onClose();
@@ -40,7 +40,7 @@ export function Modal({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className={`my-auto w-full ${maxWidthClass} rounded-xl border border-zinc-200 bg-white shadow-xl`}
+        className={`my-auto w-full ${maxWidthClass} rounded-xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-800 dark:bg-[#111113]`}
       >
         {children}
       </section>

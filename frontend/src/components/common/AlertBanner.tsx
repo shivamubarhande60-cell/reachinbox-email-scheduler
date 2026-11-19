@@ -11,10 +11,14 @@ interface AlertBannerProps {
 }
 
 const TONE_STYLES: Record<AlertTone, string> = {
-  success: 'border-emerald-200 bg-emerald-50/70 text-emerald-900',
-  error: 'border-rose-200 bg-rose-50/70 text-rose-800',
-  info: 'border-sky-200 bg-sky-50/70 text-sky-900',
-  warning: 'border-amber-200 bg-amber-50/70 text-amber-900',
+  success:
+    'border-emerald-200 bg-emerald-50/80 text-emerald-900 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200',
+  error:
+    'border-rose-200 bg-rose-50/80 text-rose-800 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200',
+  info:
+    'border-sky-200 bg-sky-50/80 text-sky-900 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200',
+  warning:
+    'border-amber-200 bg-amber-50/80 text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200',
 };
 
 /**
@@ -43,7 +47,7 @@ export function AlertBanner({
           type="button"
           onClick={onDismiss}
           aria-label={dismissLabel}
-          className="rounded p-0.5 opacity-70 hover:bg-black/5 hover:opacity-100"
+          className="rounded p-0.5 opacity-70 hover:bg-black/5 hover:opacity-100 dark:hover:bg-white/10"
         >
           <X size={15} aria-hidden="true" />
         </button>
