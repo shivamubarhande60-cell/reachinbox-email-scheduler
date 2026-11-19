@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { randomUUID } = require('node:crypto');
 const { test } = require('node:test');
 const Redis = require('ioredis');
-const { reserveHourlyCapacity } = require('../dist/services/rateLimit.js');
+const { reserveHourlyCapacity } = require('../dist/src/services/rateLimitService.js');
 
 test('Redis grants only the configured sender capacity under concurrent reservations', async (t) => {
   const redis = new Redis({

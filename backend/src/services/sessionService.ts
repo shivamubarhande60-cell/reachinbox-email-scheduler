@@ -1,52 +1,61 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { Request, Response } from 'express';
+import { env } from '../config/env';
 
-const cookieName = 'reachinbox_session';
-const sessionDurationSeconds = 60 * 60 * 24 * 7;
+const COOKIE_NAME = 'reachinbox_session';
+const SESSION_DURATION_SECONDS = 60 * 60 * 24 * 7;
 
-function getCookieAttributes(maxAge: number) {
-  const sameSite = process.env.SESSION_COOKIE_SAME_SITE || 'lax';
-  if (!['lax', 'strict', 'none'].includes(sameSite)) {
-    throw new Error('SESSION_COOKIE_SAME_SITE must be lax, strict, or none.');
-  }
-  const secure = process.env.NODE_ENV === 'production' || sameSite === 'none';
+function getCookieAttributes(maxAge: number): string {
+  const { sameSite } = env.session;
+  const secure = env.isProduction || sameSite === 'none';
   return `HttpOnly; SameSite=${sameSite}; Path=/; Max-Age=${maxAge}${secure ? '; Secure' : ''}`;
 }
 
-function getSecret() {
-  const secret = process.env.SESSION_SECRET;
+function getSecret(): string {
+  const { secret } = env.session;
   if (!secret || secret.length < 32) {
     throw new Error('SESSION_SECRET must contain at least 32 characters.');
   }
   return secret;
 }
 
-function sign(value: string) {
+function sign(value: string): string {
   return createHmac('sha256', getSecret()).update(value).digest('base64url');
 }
 
-export function setSessionCookie(response: Response, userId: number) {
-  const payload = Buffer.from(JSON.stringify({
-    userId,
-    expiresAt: Date.now() + sessionDurationSeconds * 1000,
-  })).toString('base64url');
+/**
+ * Sets a signed HTTP-only session cookie for the authenticated user.
+ */
+export function setSessionCookie(response: Response, userId: number): void {
+  const payload = Buffer.from(
+    JSON.stringify({
+      userId,
+      expiresAt: Date.now() + SESSION_DURATION_SECONDS * 1000,
+    }),
+  ).toString('base64url');
   const token = `${payload}.${sign(payload)}`;
   response.setHeader(
     'Set-Cookie',
-    `${cookieName}=${token}; ${getCookieAttributes(sessionDurationSeconds)}`,
+    `${COOKIE_NAME}=${token}; ${getCookieAttributes(SESSION_DURATION_SECONDS)}`,
   );
 }
 
-export function clearSessionCookie(response: Response) {
-  response.setHeader('Set-Cookie', `${cookieName}=; ${getCookieAttributes(0)}`);
+/**
+ * Clears the session cookie on sign-out or invalidation.
+ */
+export function clearSessionCookie(response: Response): void {
+  response.setHeader('Set-Cookie', `${COOKIE_NAME}=; ${getCookieAttributes(0)}`);
 }
 
+/**
+ * Verifies the session cookie on an incoming request and returns the user ID, or null if invalid.
+ */
 export function getSessionUserId(request: Request): number | null {
   const cookie = request.headers.cookie
     ?.split(';')
     .map((part) => part.trim())
-    .find((part) => part.startsWith(`${cookieName}=`))
-    ?.slice(cookieName.length + 1);
+    .find((part) => part.startsWith(`${COOKIE_NAME}=`))
+    ?.slice(COOKIE_NAME.length + 1);
   if (!cookie) return null;
 
   const [payload, signature] = cookie.split('.');

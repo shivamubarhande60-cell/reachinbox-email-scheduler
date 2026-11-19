@@ -1,4 +1,4 @@
-import IORedis from 'ioredis';
+import type IORedis from 'ioredis';
 
 const hourReservationScript = `
   local senderCount = tonumber(redis.call('GET', KEYS[1]) or '0')
@@ -17,6 +17,14 @@ const hourReservationScript = `
   return 1
 `;
 
+/**
+ * Atomically reserves hourly send capacity for both sender and campaign in Redis.
+ * Return codes:
+ * - `0`: sender hourly limit reached
+ * - `1`: reserved successfully
+ * - `2`: campaign hourly limit reached
+ * - `3`: reserved successfully, and sender just reached its hourly limit
+ */
 export async function reserveHourlyCapacity(
   redis: IORedis,
   senderId: string,
@@ -24,13 +32,15 @@ export async function reserveHourlyCapacity(
   hour: number,
   senderLimit: number,
   campaignLimit: number,
-) {
-  return Number(await redis.eval(
-    hourReservationScript,
-    2,
-    `email-rate:${senderId}:${hour}`,
-    `campaign-email-rate:${campaignId}:${hour}`,
-    senderLimit,
-    campaignLimit,
-  ));
+): Promise<number> {
+  return Number(
+    await redis.eval(
+      hourReservationScript,
+      2,
+      `email-rate:${senderId}:${hour}`,
+      `campaign-email-rate:${campaignId}:${hour}`,
+      senderLimit,
+      campaignLimit,
+    ),
+  );
 }

@@ -1,21 +1,21 @@
-import 'dotenv/config';
 import { randomUUID } from 'node:crypto';
 import { DelayedError, Job, Worker } from 'bullmq';
 import type { Prisma } from '@prisma/client';
-import { emailIndexQueue } from '../queues/emailQueue';
-import { indexEmailDoc } from '../../services/elasticsearch';
-import prisma from '../../services/database';
-import { createRedisConnection } from '../../services/redisConnection';
-import { reserveHourlyCapacity } from '../../services/rateLimit';
-import { getSender, getTransporter, type Sender } from '../../services/senders';
-import { shouldSimulateEmailDelivery } from '../../services/emailDeliveryMode';
-import { decryptToken } from '../../services/tokenEncryption';
+import { env } from '../config/env';
+import { indexEmailDoc } from '../lib/elasticsearch';
+import prisma from '../lib/prisma';
+import { createRedisConnection } from '../lib/redis';
+import { enqueueIndexJobs } from '../queues/emailQueue';
+import { shouldSimulateEmailDelivery } from '../services/emailDeliveryMode';
+import { reserveHourlyCapacity } from '../services/rateLimitService';
+import { getSender, getTransporter, type Sender } from '../services/senderService';
+import { notifySlackRateLimit } from '../services/slackService';
 
 const redis = createRedisConnection();
 
-const concurrency = Number(process.env.WORKER_CONCURRENCY || 5);
-const globalHourlyLimit = Number(process.env.MAX_EMAILS_PER_HOUR_PER_SENDER || process.env.MAX_EMAILS_PER_HOUR || 200);
-const minimumDelayMs = Number(process.env.EMAIL_DELAY_MS || 2000);
+const concurrency = env.rateLimit.workerConcurrency;
+const minimumDelayMs = env.rateLimit.minimumDelayMs;
+
 const releaseSenderLockScript = `
   if redis.call('GET', KEYS[1]) == ARGV[1] then
     return redis.call('DEL', KEYS[1])
@@ -29,89 +29,12 @@ interface EmailJob {
 
 type SendingLead = Prisma.LeadGetPayload<{ include: { campaign: true } }>;
 
-async function delayJob(job: Job<EmailJob>, until: number) {
+async function delayJob(job: Job<EmailJob>, until: number): Promise<never> {
   await job.moveToDelayed(until, job.token);
   throw new DelayedError();
 }
 
-async function queueEmailIndex(leadId: number, reason: string) {
-  await emailIndexQueue.add(
-    'index-email',
-    { leadId },
-    {
-      jobId: `index-${leadId}-${reason}`,
-      attempts: 10,
-      backoff: { type: 'exponential', delay: 1000 },
-      removeOnComplete: false,
-      removeOnFail: true,
-    },
-  );
-}
-
-async function notifySlack(userId: number | null, senderId: string, limit: number, hour: number) {
-  if (!userId) return;
-
-  let notificationKey: string | undefined;
-  let notificationReserved = false;
-  try {
-    const connection = await prisma.slackConnection.findUnique({ where: { userId } });
-    if (!connection) return;
-
-    notificationKey = `rate-notification:${senderId}:${userId}:${hour}`;
-    const firstNotification = await redis.set(notificationKey, '1', 'EX', 7200, 'NX');
-    if (!firstNotification) return;
-    notificationReserved = true;
-
-    const token = decryptToken(connection.encryptedToken, connection.tokenIv, connection.tokenTag);
-    const opened = await fetch('https://slack.com/api/conversations.open', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json; charset=utf-8',
-      },
-      signal: AbortSignal.timeout(5000),
-      body: JSON.stringify({ users: connection.slackUserId }),
-    });
-    const openResult = await opened.json() as {
-      ok: boolean;
-      error?: string;
-      channel?: { id?: string };
-    };
-    if (!opened.ok || !openResult.ok || !openResult.channel?.id) {
-      throw new Error(`Slack could not open a direct message: ${openResult.error || opened.statusText}`);
-    }
-
-    const sent = await fetch('https://slack.com/api/chat.postMessage', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json; charset=utf-8',
-      },
-      signal: AbortSignal.timeout(5000),
-      body: JSON.stringify({
-        channel: openResult.channel.id,
-        text: `The hourly email limit of ${limit} was reached for sender "${senderId}". Remaining emails are queued for the next UTC hour.`,
-      }),
-    });
-    const sendResult = await sent.json() as { ok: boolean; error?: string };
-    if (!sent.ok || !sendResult.ok) {
-      throw new Error(`Slack could not send the rate-limit message: ${sendResult.error || sent.statusText}`);
-    }
-    notificationReserved = false;
-    console.log(`Slack rate-limit notification sent for sender ${senderId}.`);
-  } catch (error) {
-    if (notificationReserved && notificationKey) {
-      try {
-        await redis.del(notificationKey);
-      } catch (releaseError) {
-        console.error('Could not release the Slack notification reservation:', releaseError);
-      }
-    }
-    console.error('Slack rate-limit notification failed:', error);
-  }
-}
-
-async function indexLead(leadId: number) {
+async function indexLead(leadId: number): Promise<void> {
   const lead = await prisma.lead.findUnique({
     where: { id: leadId },
     include: { campaign: true },
@@ -145,9 +68,9 @@ export const emailIndexWorker = new Worker<{ leadId: number }>(
   },
 );
 
-async function waitForSendGap(lead: SendingLead, sender: Sender, job: Job<EmailJob>) {
+async function waitForSendGap(lead: SendingLead, sender: Sender, job: Job<EmailJob>): Promise<void> {
   const gap = Math.max(minimumDelayMs, sender.minimumDelayMs, lead.campaign.delayMs);
-  const lastSend = Number(await redis.get(`email-last-send:${lead.senderId}`) || 0);
+  const lastSend = Number((await redis.get(`email-last-send:${lead.senderId}`)) || 0);
   const nextSend = lastSend + gap;
   if (lastSend && Date.now() < nextSend) {
     await prisma.lead.update({ where: { id: lead.id }, data: { scheduledAt: new Date(nextSend) } });
@@ -155,13 +78,12 @@ async function waitForSendGap(lead: SendingLead, sender: Sender, job: Job<EmailJ
   }
 }
 
-async function checkHourlyLimit(
-  lead: SendingLead,
-  sender: Sender,
-  job: Job<EmailJob>,
-) {
+async function checkHourlyLimit(lead: SendingLead, sender: Sender, job: Job<EmailJob>): Promise<void> {
   const hour = Math.floor(Date.now() / 3600000);
-  const campaignLimit = Math.min(lead.campaign.hourlyLimit || sender.maxEmailsPerHour, sender.maxEmailsPerHour);
+  const campaignLimit = Math.min(
+    lead.campaign.hourlyLimit || sender.maxEmailsPerHour,
+    sender.maxEmailsPerHour,
+  );
   const reservation = await reserveHourlyCapacity(
     redis,
     lead.senderId,
@@ -171,7 +93,9 @@ async function checkHourlyLimit(
     campaignLimit,
   );
   if (reservation === 1 || reservation === 3) {
-    if (reservation === 3) await notifySlack(lead.campaign.userId, lead.senderId, sender.maxEmailsPerHour, hour);
+    if (reservation === 3) {
+      await notifySlackRateLimit(redis, lead.campaign.userId, lead.senderId, sender.maxEmailsPerHour, hour);
+    }
     return;
   }
 
@@ -183,10 +107,7 @@ async function checkHourlyLimit(
   await delayJob(job, nextHour);
 }
 
-async function sendEmail(
-  lead: SendingLead,
-  sender: Sender,
-) {
+async function sendEmail(lead: SendingLead, sender: Sender): Promise<void> {
   if (shouldSimulateEmailDelivery(sender.simulated)) {
     const simulatedAt = new Date();
     await prisma.lead.update({
@@ -198,7 +119,7 @@ async function sendEmail(
         errorMessage: 'Demo mode: no email was sent.',
       },
     });
-    await queueEmailIndex(lead.id, 'simulated');
+    await enqueueIndexJobs([lead.id], 'simulated');
     console.log(`Email delivery simulated for lead ${lead.id} using sender ${sender.id}.`);
     return;
   }
@@ -211,9 +132,10 @@ async function sendEmail(
       text: lead.campaign.body,
     });
   } catch (error) {
-    const responseCode = typeof error === 'object' && error !== null && 'responseCode' in error
-      ? error.responseCode
-      : undefined;
+    const responseCode =
+      typeof error === 'object' && error !== null && 'responseCode' in error
+        ? error.responseCode
+        : undefined;
     if (typeof responseCode === 'number' && responseCode >= 400 && responseCode < 500) {
       await prisma.lead.update({
         where: { id: lead.id },
@@ -229,7 +151,7 @@ async function sendEmail(
         errorMessage: `SMTP delivery outcome is uncertain; not retried to avoid a possible duplicate. ${String(error)}`,
       },
     });
-    await queueEmailIndex(lead.id, 'failed');
+    await enqueueIndexJobs([lead.id], 'failed');
     return;
   }
 
@@ -238,11 +160,11 @@ async function sendEmail(
     where: { id: lead.id },
     data: { status: 'SENT', sentAt, scheduledAt: sentAt, errorMessage: null },
   });
-  await queueEmailIndex(lead.id, 'sent');
+  await enqueueIndexJobs([lead.id], 'sent');
   console.log(`Email sent to ${lead.email} using sender ${sender.id}.`);
 }
 
-async function processEmail(job: Job<EmailJob>) {
+async function processEmail(job: Job<EmailJob>): Promise<void> {
   const lead = await prisma.lead.findUnique({
     where: { id: job.data.leadId },
     include: { campaign: true },
@@ -257,7 +179,7 @@ async function processEmail(job: Job<EmailJob>) {
         errorMessage: 'Delivery stopped unexpectedly; it was not retried to avoid a possible duplicate.',
       },
     });
-    await queueEmailIndex(lead.id, 'failed');
+    await enqueueIndexJobs([lead.id], 'failed');
     return;
   }
 
@@ -289,7 +211,10 @@ export const emailWorker = new Worker<EmailJob>('email-queue', processEmail, {
   concurrency,
 });
 
-export async function closeWorkers() {
+/**
+ * Gracefully drains and closes both BullMQ workers and their Redis connection.
+ */
+export async function closeWorkers(): Promise<void> {
   await Promise.all([emailWorker.close(), emailIndexWorker.close(), redis.quit()]);
 }
 
@@ -301,7 +226,7 @@ emailWorker.on('failed', async (job, error) => {
       where: { id: job.data.leadId, status: 'PENDING' },
       data: { status: 'FAILED', errorMessage: error.message },
     });
-    if (updated.count) await queueEmailIndex(job.data.leadId, 'failed');
+    if (updated.count) await enqueueIndexJobs([job.data.leadId], 'failed');
   }
 });
 

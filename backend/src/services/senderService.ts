@@ -1,8 +1,10 @@
 import nodemailer, { type Transporter } from 'nodemailer';
 import { randomUUID } from 'node:crypto';
-import prisma from './database';
+import { env } from '../config/env';
+import { BadRequestError, ConflictError, NotFoundError } from '../errors/AppError';
+import { decryptSecret, encryptSecret } from '../lib/crypto';
+import prisma from '../lib/prisma';
 import { isEmailSimulationEnabled } from './emailDeliveryMode';
-import { decryptSecret, encryptSecret } from './tokenEncryption';
 
 export interface Sender {
   id: string;
@@ -18,38 +20,58 @@ export interface Sender {
   simulated?: boolean;
 }
 
-const configuredHourlyLimit = Number(process.env.MAX_EMAILS_PER_HOUR_PER_SENDER || process.env.MAX_EMAILS_PER_HOUR || 200);
-const configuredMinimumDelayMs = Number(process.env.EMAIL_DELAY_MS || 2000);
+export class SenderInputError extends BadRequestError {
+  constructor(message: string) {
+    super(message, 'SENDER_INPUT_ERROR');
+  }
+}
 
-export class SenderInputError extends Error {}
-export class SenderConnectionError extends Error {}
-export class SenderNotFoundError extends Error {}
-export class SenderInUseError extends Error {}
+export class SenderConnectionError extends BadRequestError {
+  constructor(message: string) {
+    super(message, 'SENDER_CONNECTION_ERROR');
+  }
+}
+
+export class SenderNotFoundError extends NotFoundError {
+  constructor(message: string) {
+    super(message, 'SENDER_NOT_FOUND');
+  }
+}
+
+export class SenderInUseError extends ConflictError {
+  constructor(message: string) {
+    super(message, 'SENDER_IN_USE');
+  }
+}
+
+const configuredHourlyLimit = env.rateLimit.maxEmailsPerHourPerSender;
+const configuredMinimumDelayMs = env.rateLimit.minimumDelayMs;
 
 function loadSenders(): Sender[] {
   if (isEmailSimulationEnabled()) {
-    return [{
-      id: 'render-demo-sender',
-      name: 'Render demo (simulated)',
-      from: 'demo@reachinbox.invalid',
-      host: 'simulation.local',
-      port: 0,
-      user: '',
-      pass: '',
-      maxEmailsPerHour: configuredHourlyLimit,
-      minimumDelayMs: configuredMinimumDelayMs,
-      simulated: true,
-    }];
+    return [
+      {
+        id: 'render-demo-sender',
+        name: 'Render demo (simulated)',
+        from: 'demo@reachinbox.invalid',
+        host: 'simulation.local',
+        port: 0,
+        user: '',
+        pass: '',
+        maxEmailsPerHour: configuredHourlyLimit,
+        minimumDelayMs: configuredMinimumDelayMs,
+        simulated: true,
+      },
+    ];
   }
 
-  const configured = process.env.SMTP_SENDERS;
-  if (configured) {
-    const senders = JSON.parse(configured) as Sender[];
-    if (!Array.isArray(senders) || senders.length === 0) {
+  if (env.smtp.sendersJson) {
+    const parsed = JSON.parse(env.smtp.sendersJson) as Sender[];
+    if (!Array.isArray(parsed) || parsed.length === 0) {
       throw new Error('SMTP_SENDERS must be a non-empty JSON array.');
     }
     const ids = new Set<string>();
-    for (const sender of senders) {
+    for (const sender of parsed) {
       if (!sender.id || !sender.name || !sender.from || !sender.host || !sender.user || !sender.pass) {
         throw new Error('Each SMTP sender needs id, name, from, host, user, and pass.');
       }
@@ -58,27 +80,27 @@ function loadSenders(): Sender[] {
       }
       ids.add(sender.id);
     }
-    return senders.map((sender) => ({
+    return parsed.map((sender) => ({
       ...sender,
       maxEmailsPerHour: configuredHourlyLimit,
       minimumDelayMs: configuredMinimumDelayMs,
     }));
   }
 
-  const user = process.env.SMTP_USER || process.env.ETHEREAL_USER;
-  const pass = process.env.SMTP_PASS || process.env.ETHEREAL_PASS;
-  if (user && pass) {
-    return [{
-      id: 'default',
-      name: 'Default sender',
-      from: process.env.SMTP_FROM || user,
-      host: process.env.SMTP_HOST || 'smtp.ethereal.email',
-      port: Number(process.env.SMTP_PORT || 587),
-      user,
-      pass,
-      maxEmailsPerHour: configuredHourlyLimit,
-      minimumDelayMs: configuredMinimumDelayMs,
-    }];
+  if (env.smtp.user && env.smtp.pass) {
+    return [
+      {
+        id: 'default',
+        name: 'Default sender',
+        from: env.smtp.from || env.smtp.user,
+        host: env.smtp.host,
+        port: env.smtp.port,
+        user: env.smtp.user,
+        pass: env.smtp.pass,
+        maxEmailsPerHour: configuredHourlyLimit,
+        minimumDelayMs: configuredMinimumDelayMs,
+      },
+    ];
   }
 
   return [];
@@ -115,7 +137,10 @@ function toSender(record: {
   };
 }
 
-export async function listSenders(userId: number) {
+/**
+ * Lists both environment-configured and user-managed SMTP senders.
+ */
+export async function listSenders(userId: number): Promise<Sender[]> {
   if (isEmailSimulationEnabled()) return senders;
 
   const managed = await prisma.sender.findMany({
@@ -125,7 +150,10 @@ export async function listSenders(userId: number) {
   return [...senders, ...managed.map(toSender)];
 }
 
-export async function getSender(id: string, userId: number) {
+/**
+ * Resolves a sender by ID for a specific user (managed or environment-configured).
+ */
+export async function getSender(id: string, userId: number): Promise<Sender | undefined> {
   if (isEmailSimulationEnabled()) {
     const configuredSender = senders.find((sender) => sender.id === id);
     if (configuredSender) return configuredSender;
@@ -138,7 +166,10 @@ export async function getSender(id: string, userId: number) {
   return senders.find((sender) => sender.id === id);
 }
 
-export function getTransporter(sender: Sender) {
+/**
+ * Returns a cached Nodemailer transporter for the given sender.
+ */
+export function getTransporter(sender: Sender): Transporter {
   let transporter = transporters.get(sender.id);
   if (!transporter) {
     transporter = nodemailer.createTransport({
@@ -154,29 +185,48 @@ export function getTransporter(sender: Sender) {
   return transporter;
 }
 
-export async function verifySender(sender: Sender) {
+/**
+ * Verifies SMTP connectivity and credentials for a sender.
+ */
+export async function verifySender(sender: Sender): Promise<void> {
   await getTransporter(sender).verify();
 }
 
+/**
+ * Validates, verifies SMTP connectivity, encrypts credentials, and stores a managed sender.
+ */
 export async function createManagedSender(
   userId: number,
   input: unknown,
   limits: { maxEmailsPerHour: number; minimumDelayMs: number; etherealOnly?: boolean },
-) {
+): Promise<void> {
   if (isEmailSimulationEnabled()) {
     throw new SenderInputError('Demo delivery is enabled. No SMTP sender credentials are needed.');
   }
 
-  const data = input && typeof input === 'object' && !Array.isArray(input)
-    ? input as Record<string, unknown>
-    : {};
+  const data =
+    input && typeof input === 'object' && !Array.isArray(input)
+      ? (input as Record<string, unknown>)
+      : {};
   const { name, from, host, port, username, password, maxEmailsPerHour, minimumDelayMs } = data;
   const cleanHost = typeof host === 'string' ? host.trim() : '';
-  if (typeof name !== 'string' || !name.trim() || name.trim().length > 120
-    || typeof from !== 'string' || from.length > 320 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(from.trim())
-    || !cleanHost || cleanHost.length > 255 || /\s/.test(cleanHost)
-    || typeof username !== 'string' || !username.trim() || username.trim().length > 255
-    || typeof password !== 'string' || !password.trim() || password.length > 4096) {
+  if (
+    typeof name !== 'string' ||
+    !name.trim() ||
+    name.trim().length > 120 ||
+    typeof from !== 'string' ||
+    from.length > 320 ||
+    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(from.trim()) ||
+    !cleanHost ||
+    cleanHost.length > 255 ||
+    /\s/.test(cleanHost) ||
+    typeof username !== 'string' ||
+    !username.trim() ||
+    username.trim().length > 255 ||
+    typeof password !== 'string' ||
+    !password.trim() ||
+    password.length > 4096
+  ) {
     throw new SenderInputError('Provide a valid sender name, email, SMTP host, username, and password.');
   }
   if (limits.etherealOnly && cleanHost.toLowerCase() !== 'smtp.ethereal.email') {
@@ -193,7 +243,9 @@ export async function createManagedSender(
     throw new SenderInputError(`Hourly limit must be between 1 and ${limits.maxEmailsPerHour}.`);
   }
   if (!Number.isInteger(delayMs) || delayMs < limits.minimumDelayMs || delayMs > 86400000) {
-    throw new SenderInputError(`Minimum delay must be between ${limits.minimumDelayMs} and 86,400,000 milliseconds.`);
+    throw new SenderInputError(
+      `Minimum delay must be between ${limits.minimumDelayMs} and 86,400,000 milliseconds.`,
+    );
   }
 
   const id = `managed-${randomUUID()}`;
@@ -213,7 +265,9 @@ export async function createManagedSender(
   try {
     await verifySender(sender);
   } catch {
-    throw new SenderConnectionError('Could not connect to this SMTP server. Check the host, port, username, and password.');
+    throw new SenderConnectionError(
+      'Could not connect to this SMTP server. Check the host, port, username, and password.',
+    );
   } finally {
     closeTransporter(id);
   }
@@ -236,7 +290,10 @@ export async function createManagedSender(
   });
 }
 
-export async function removeManagedSender(userId: number, senderId: string) {
+/**
+ * Deletes a user-managed sender if no active/pending emails reference it.
+ */
+export async function removeManagedSender(userId: number, senderId: string): Promise<void> {
   const sender = await prisma.sender.findFirst({ where: { id: senderId, userId }, select: { id: true } });
   if (!sender) throw new SenderNotFoundError('Managed sender not found.');
 
@@ -248,13 +305,18 @@ export async function removeManagedSender(userId: number, senderId: string) {
     },
   });
   if (pendingEmails > 0) {
-    throw new SenderInUseError('This sender still has scheduled emails. Wait for them to finish before removing it.');
+    throw new SenderInUseError(
+      'This sender still has scheduled emails. Wait for them to finish before removing it.',
+    );
   }
   await prisma.sender.delete({ where: { id: senderId } });
   closeTransporter(senderId);
 }
 
-export function closeTransporter(senderId: string) {
+/**
+ * Closes and removes a cached Nodemailer transporter.
+ */
+export function closeTransporter(senderId: string): void {
   const transporter = transporters.get(senderId);
   if (!transporter) return;
   transporter.close();

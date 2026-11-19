@@ -37,6 +37,44 @@ Compose campaigns, schedule background jobs, manage SMTP senders, and track emai
 
 ---
 
+## 📁 Project Architecture
+
+### Backend (`backend/src/`)
+
+```text
+backend/src/
+├── config/         # Centralized, validated environment configuration (env.ts)
+├── errors/         # Typed AppError hierarchy (BadRequest, Unauthorized, Conflict, etc.)
+├── lib/            # Infrastructure clients (prisma.ts, redis.ts, elasticsearch.ts, crypto.ts)
+├── middleware/     # Express middleware (auth.ts, errorHandler.ts, asyncHandler)
+├── queues/         # BullMQ queue definitions & job enqueueing helpers
+├── routes/         # Modular versioned API routers (/api/v1/*, /api/*, /auth/*, /health)
+├── services/       # Pure business logic (auth, campaigns, senders, search, slack, rate limits)
+├── workers/        # BullMQ email delivery & Elasticsearch indexing workers
+├── app.ts          # Express app factory (CORS, routes, static SPA serving, error handling)
+└── index.ts        # Server bootstrap, startup job recovery & graceful shutdown
+```
+
+### Frontend (`frontend/src/`)
+
+```text
+frontend/src/
+├── config/         # Frontend environment configuration (env.ts)
+├── types/          # Shared TypeScript domain interfaces
+├── services/       # Typed API client (apiClient.ts) & domain API modules
+├── state/          # React Context + reducer state management (AuthContext, DashboardContext)
+├── utils/          # Pure formatting, email parsing, and UI helpers
+├── components/
+│   ├── auth/       # LoginScreen
+│   ├── common/     # Reusable UI primitives (ErrorBoundary, Modal, AlertBanner, StatusBadge, EmptyState)
+│   ├── dashboard/  # DashboardView, ActivityOverview, CampaignsTable, EmailsTable
+│   ├── layout/     # Sidebar, TopHeader
+│   └── modals/     # ComposeModal, SenderManagementModal
+└── App.tsx         # Root application shell
+```
+
+---
+
 ## 🛠️ Tech Stack
 
 | Layer | Technologies |
@@ -186,7 +224,7 @@ Refer to `backend/.env.example` for the full configuration required by the proje
 
 ## ☁️ Deployment
 
-The root `Dockerfile` builds the frontend and backend into a single Render web service.
+The root `Dockerfile` and `railway.json` build the frontend and backend into a single web service.
 
 A hosted deployment requires:
 
@@ -194,6 +232,19 @@ A hosted deployment requires:
 - A hosted MySQL database.
 - Session, encryption, and OAuth credentials.
 - Elasticsearch credentials when using a hosted cluster.
+
+### Deploying on Railway
+
+1. Create a new Railway project from this GitHub repository (Railway will detect `railway.json` and `Dockerfile` automatically).
+2. Add **MySQL** and **Redis** services to the Railway project.
+3. On the web service, configure environment variables:
+   - `DATABASE_URL` → `${{MySQL.MYSQL_URL}}`
+   - `REDIS_URL` → `${{Redis.REDIS_URL}}`
+   - `SESSION_SECRET` and `TOKEN_ENCRYPTION_KEY` (generate 32-byte / 64-hex secrets)
+   - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_CALLBACK_URL`
+   - `FRONTEND_URL` (or leave unset to auto-resolve `https://${{RAILWAY_PUBLIC_DOMAIN}}`)
+   - Optionally `DEMO_EMAIL_MODE=true` for simulated delivery without SMTP, or configure `SMTP_SENDERS` / dashboard senders.
+4. Railway will run `npm run db:push && node dist/src/index.js` and verify `/health`.
 
 ### Simulated Delivery on Render
 

@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
-const { isLocalDemoEnabled } = require('../dist/services/localDemo.js');
+const { isLocalDemoEnabled } = require('../dist/src/services/localDemo.js');
 
 test('local preview is available only when explicitly enabled on a local non-production request', () => {
   assert.equal(isLocalDemoEnabled('development', 'true', '127.0.0.1'), true);

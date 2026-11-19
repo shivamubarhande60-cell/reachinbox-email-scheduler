@@ -1,11 +1,13 @@
 import { Client } from '@elastic/elasticsearch';
+import { env } from '../config/env';
 
-const apiKey = process.env.ELASTICSEARCH_API_KEY;
-const username = process.env.ELASTICSEARCH_USERNAME;
-const password = process.env.ELASTICSEARCH_PASSWORD;
+const { apiKey, username, password, node } = env.elasticsearch;
 
+/**
+ * Shared Elasticsearch client configured from environment variables.
+ */
 export const esClient = new Client({
-  node: process.env.ELASTICSEARCH_NODE || 'http://localhost:9200',
+  node,
   ...(apiKey
     ? { auth: { apiKey } }
     : username && password
@@ -13,7 +15,10 @@ export const esClient = new Client({
       : {}),
 });
 
-export async function initElasticsearch() {
+/**
+ * Ensures the `emails` search index exists with expected field mappings.
+ */
+export async function initElasticsearch(): Promise<void> {
   const exists = await esClient.indices.exists({ index: 'emails' });
   if (!exists) {
     await esClient.indices.create({
@@ -36,6 +41,9 @@ export async function initElasticsearch() {
   }
 }
 
+/**
+ * Indexes or updates a single lead email document in Elasticsearch.
+ */
 export async function indexEmailDoc(doc: {
   leadId: number;
   userId: number | null;
@@ -47,7 +55,7 @@ export async function indexEmailDoc(doc: {
   status: string;
   scheduledAt: Date | null;
   sentAt: Date | null;
-}) {
+}): Promise<void> {
   await esClient.index({
     index: 'emails',
     id: doc.leadId.toString(),

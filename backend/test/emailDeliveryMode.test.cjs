@@ -3,7 +3,7 @@ const { test } = require('node:test');
 const {
   isEmailSimulationEnabled,
   shouldSimulateEmailDelivery,
-} = require('../dist/services/emailDeliveryMode.js');
+} = require('../dist/src/services/emailDeliveryMode.js');
 
 test('simulated email delivery is opt-in and accepts case-insensitive true', () => {
   assert.equal(isEmailSimulationEnabled('true'), true);
