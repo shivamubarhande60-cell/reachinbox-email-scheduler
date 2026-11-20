@@ -6,6 +6,7 @@ import { indexEmailDoc } from '../lib/elasticsearch';
 import prisma from '../lib/prisma';
 import { createRedisConnection } from '../lib/redis';
 import { enqueueIndexJobs } from '../queues/emailQueue';
+import { HttpDeliveryError, sendViaHttpProvider } from '../services/emailDelivery';
 import { shouldSimulateEmailDelivery } from '../services/emailDeliveryMode';
 import { reserveHourlyCapacity } from '../services/rateLimitService';
 import { getSender, getTransporter, type Sender } from '../services/senderService';
@@ -124,35 +125,69 @@ async function sendEmail(lead: SendingLead, sender: Sender): Promise<void> {
     return;
   }
 
-  try {
-    await getTransporter(sender).sendMail({
-      from: sender.from,
-      to: lead.email,
-      subject: lead.campaign.subject,
-      text: lead.campaign.body,
-    });
-  } catch (error) {
-    const responseCode =
-      typeof error === 'object' && error !== null && 'responseCode' in error
-        ? error.responseCode
-        : undefined;
-    if (typeof responseCode === 'number' && responseCode >= 400 && responseCode < 500) {
+  if (sender.transport !== 'smtp') {
+    try {
+      await sendViaHttpProvider(
+        {
+          transport: sender.transport,
+          name: sender.name,
+          from: sender.from,
+          pass: sender.pass,
+        },
+        {
+          to: lead.email,
+          subject: lead.campaign.subject,
+          text: lead.campaign.body,
+        },
+      );
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      if (error instanceof HttpDeliveryError && error.retryable) {
+        await prisma.lead.update({
+          where: { id: lead.id },
+          data: { status: 'PENDING', errorMessage: detail },
+        });
+        throw error;
+      }
+
       await prisma.lead.update({
         where: { id: lead.id },
-        data: { status: 'PENDING', errorMessage: String(error) },
+        data: { status: 'FAILED', errorMessage: detail },
       });
-      throw error;
+      await enqueueIndexJobs([lead.id], 'failed');
+      return;
     }
+  } else {
+    try {
+      await getTransporter(sender).sendMail({
+        from: sender.from,
+        to: lead.email,
+        subject: lead.campaign.subject,
+        text: lead.campaign.body,
+      });
+    } catch (error) {
+      const responseCode =
+        typeof error === 'object' && error !== null && 'responseCode' in error
+          ? error.responseCode
+          : undefined;
+      if (typeof responseCode === 'number' && responseCode >= 400 && responseCode < 500) {
+        await prisma.lead.update({
+          where: { id: lead.id },
+          data: { status: 'PENDING', errorMessage: String(error) },
+        });
+        throw error;
+      }
 
-    await prisma.lead.update({
-      where: { id: lead.id },
-      data: {
-        status: 'FAILED',
-        errorMessage: `SMTP delivery outcome is uncertain; not retried to avoid a possible duplicate. ${String(error)}`,
-      },
-    });
-    await enqueueIndexJobs([lead.id], 'failed');
-    return;
+      await prisma.lead.update({
+        where: { id: lead.id },
+        data: {
+          status: 'FAILED',
+          errorMessage: `SMTP delivery outcome is uncertain; not retried to avoid a possible duplicate. ${String(error)}`,
+        },
+      });
+      await enqueueIndexJobs([lead.id], 'failed');
+      return;
+    }
   }
 
   const sentAt = new Date();

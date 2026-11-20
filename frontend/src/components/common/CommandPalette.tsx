@@ -74,7 +74,7 @@ export function CommandPalette() {
       {
         id: 'action-senders',
         section: 'Actions',
-        label: 'Manage SMTP senders',
+        label: 'Manage email senders',
         icon: <Settings size={14} aria-hidden="true" />,
         run: () => {
           close();

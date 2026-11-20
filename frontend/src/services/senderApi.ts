@@ -1,13 +1,15 @@
-import type { Sender } from '../types';
+import type { EmailTransport, Sender } from '../types';
 import { apiRequest } from './apiClient';
 
 export interface CreateSenderPayload {
+  transport: EmailTransport;
   name: string;
   from: string;
-  host: string;
-  port: number;
-  username: string;
-  password: string;
+  apiKey?: string;
+  host?: string;
+  port?: number;
+  username?: string;
+  password?: string;
   maxEmailsPerHour: number;
   minimumDelayMs: number;
 }

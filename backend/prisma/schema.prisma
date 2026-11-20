@@ -59,6 +59,7 @@ model Sender {
   user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   name               String   @db.VarChar(120)
   from               String   @db.VarChar(320)
+  transport          String   @default("smtp") @db.VarChar(32)
   host               String   @db.VarChar(255)
   port               Int
   username           String   @db.VarChar(255)

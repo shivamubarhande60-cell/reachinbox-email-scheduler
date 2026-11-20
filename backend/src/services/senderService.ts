@@ -4,12 +4,19 @@ import { env } from '../config/env';
 import { BadRequestError, ConflictError, NotFoundError } from '../errors/AppError';
 import { decryptSecret, encryptSecret } from '../lib/crypto';
 import prisma from '../lib/prisma';
+import {
+  getHttpProviderHost,
+  parseEmailTransport,
+  verifyHttpProviderSender,
+  type EmailTransport,
+} from './emailDelivery';
 import { isEmailSimulationEnabled } from './emailDeliveryMode';
 
 export interface Sender {
   id: string;
   name: string;
   from: string;
+  transport: EmailTransport;
   host: string;
   port: number;
   user: string;
@@ -54,6 +61,7 @@ function loadSenders(): Sender[] {
         id: 'render-demo-sender',
         name: 'Render demo (simulated)',
         from: 'demo@reachinbox.invalid',
+        transport: 'smtp',
         host: 'simulation.local',
         port: 0,
         user: '',
@@ -82,6 +90,7 @@ function loadSenders(): Sender[] {
     }
     return parsed.map((sender) => ({
       ...sender,
+      transport: parseEmailTransport(sender.transport),
       maxEmailsPerHour: configuredHourlyLimit,
       minimumDelayMs: configuredMinimumDelayMs,
     }));
@@ -93,6 +102,7 @@ function loadSenders(): Sender[] {
         id: 'default',
         name: 'Default sender',
         from: env.smtp.from || env.smtp.user,
+        transport: 'smtp',
         host: env.smtp.host,
         port: env.smtp.port,
         user: env.smtp.user,
@@ -114,6 +124,7 @@ function toSender(record: {
   id: string;
   name: string;
   from: string;
+  transport: string;
   host: string;
   port: number;
   username: string;
@@ -127,6 +138,7 @@ function toSender(record: {
     id: record.id,
     name: record.name,
     from: record.from,
+    transport: parseEmailTransport(record.transport),
     host: record.host,
     port: record.port,
     user: record.username,
@@ -138,7 +150,7 @@ function toSender(record: {
 }
 
 /**
- * Lists both environment-configured and user-managed SMTP senders.
+ * Lists both environment-configured and user-managed email senders.
  */
 export async function listSenders(userId: number): Promise<Sender[]> {
   if (isEmailSimulationEnabled()) return senders;
@@ -167,7 +179,7 @@ export async function getSender(id: string, userId: number): Promise<Sender | un
 }
 
 /**
- * Returns a cached Nodemailer transporter for the given sender.
+ * Returns a cached Nodemailer transporter for the given SMTP sender.
  */
 export function getTransporter(sender: Sender): Transporter {
   let transporter = transporters.get(sender.id);
@@ -193,7 +205,7 @@ export async function verifySender(sender: Sender): Promise<void> {
 }
 
 /**
- * Validates, verifies SMTP connectivity, encrypts credentials, and stores a managed sender.
+ * Validates, verifies connectivity (HTTPS API or SMTP), encrypts credentials, and stores a managed sender.
  */
 export async function createManagedSender(
   userId: number,
@@ -201,44 +213,31 @@ export async function createManagedSender(
   limits: { maxEmailsPerHour: number; minimumDelayMs: number; etherealOnly?: boolean },
 ): Promise<void> {
   if (isEmailSimulationEnabled()) {
-    throw new SenderInputError('Demo delivery is enabled. No SMTP sender credentials are needed.');
+    throw new SenderInputError('Demo delivery is enabled. No email sender credentials are needed.');
   }
 
   const data =
     input && typeof input === 'object' && !Array.isArray(input)
       ? (input as Record<string, unknown>)
       : {};
-  const { name, from, host, port, username, password, maxEmailsPerHour, minimumDelayMs } = data;
-  const cleanHost = typeof host === 'string' ? host.trim() : '';
+
+  const transport = parseEmailTransport(data.transport);
+  const { name, from, host, port, username, password, apiKey, maxEmailsPerHour, minimumDelayMs } =
+    data;
+
   if (
     typeof name !== 'string' ||
     !name.trim() ||
     name.trim().length > 120 ||
     typeof from !== 'string' ||
     from.length > 320 ||
-    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(from.trim()) ||
-    !cleanHost ||
-    cleanHost.length > 255 ||
-    /\s/.test(cleanHost) ||
-    typeof username !== 'string' ||
-    !username.trim() ||
-    username.trim().length > 255 ||
-    typeof password !== 'string' ||
-    !password.trim() ||
-    password.length > 4096
+    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(from.trim())
   ) {
-    throw new SenderInputError('Provide a valid sender name, email, SMTP host, username, and password.');
-  }
-  if (limits.etherealOnly && cleanHost.toLowerCase() !== 'smtp.ethereal.email') {
-    throw new SenderInputError('Local preview can only use Ethereal SMTP.');
+    throw new SenderInputError('Provide a valid sender name and email address.');
   }
 
-  const smtpPort = Number(port);
   const hourlyLimit = Number(maxEmailsPerHour);
   const delayMs = Number(minimumDelayMs);
-  if (!Number.isInteger(smtpPort) || smtpPort < 1 || smtpPort > 65535) {
-    throw new SenderInputError('SMTP port must be between 1 and 65,535.');
-  }
   if (!Number.isInteger(hourlyLimit) || hourlyLimit < 1 || hourlyLimit > limits.maxEmailsPerHour) {
     throw new SenderInputError(`Hourly limit must be between 1 and ${limits.maxEmailsPerHour}.`);
   }
@@ -249,10 +248,81 @@ export async function createManagedSender(
   }
 
   const id = `managed-${randomUUID()}`;
+
+  if (transport !== 'smtp') {
+    if (limits.etherealOnly) {
+      throw new SenderInputError('Local preview can only use Ethereal SMTP.');
+    }
+
+    const rawApiKey =
+      typeof apiKey === 'string' && apiKey.trim()
+        ? apiKey.trim()
+        : typeof password === 'string'
+          ? password.trim()
+          : '';
+    if (!rawApiKey || rawApiKey.length > 4096) {
+      throw new SenderInputError(`Provide a valid ${transport} API key.`);
+    }
+
+    try {
+      await verifyHttpProviderSender(transport, rawApiKey);
+    } catch (error) {
+      throw new SenderConnectionError(
+        error instanceof Error
+          ? error.message
+          : `Could not verify ${transport} API key.`,
+      );
+    }
+
+    const encrypted = encryptSecret(rawApiKey);
+    await prisma.sender.create({
+      data: {
+        id,
+        userId,
+        name: name.trim(),
+        from: from.trim(),
+        transport,
+        host: getHttpProviderHost(transport),
+        port: 443,
+        username: transport,
+        encryptedPassword: encrypted.encryptedValue,
+        passwordIv: encrypted.iv,
+        passwordTag: encrypted.tag,
+        maxEmailsPerHour: hourlyLimit,
+        minimumDelayMs: delayMs,
+      },
+    });
+    return;
+  }
+
+  const cleanHost = typeof host === 'string' ? host.trim() : '';
+  if (
+    !cleanHost ||
+    cleanHost.length > 255 ||
+    /\s/.test(cleanHost) ||
+    typeof username !== 'string' ||
+    !username.trim() ||
+    username.trim().length > 255 ||
+    typeof password !== 'string' ||
+    !password.trim() ||
+    password.length > 4096
+  ) {
+    throw new SenderInputError('Provide a valid SMTP host, username, and password.');
+  }
+  if (limits.etherealOnly && cleanHost.toLowerCase() !== 'smtp.ethereal.email') {
+    throw new SenderInputError('Local preview can only use Ethereal SMTP.');
+  }
+
+  const smtpPort = Number(port);
+  if (!Number.isInteger(smtpPort) || smtpPort < 1 || smtpPort > 65535) {
+    throw new SenderInputError('SMTP port must be between 1 and 65,535.');
+  }
+
   const sender: Sender = {
     id,
     name: name.trim(),
     from: from.trim(),
+    transport: 'smtp',
     host: cleanHost,
     port: smtpPort,
     user: username.trim(),
@@ -278,6 +348,7 @@ export async function createManagedSender(
       userId,
       name: sender.name,
       from: sender.from,
+      transport: 'smtp',
       host: sender.host,
       port: sender.port,
       username: sender.user,

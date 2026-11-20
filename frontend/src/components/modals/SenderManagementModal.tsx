@@ -5,27 +5,69 @@ import { senderApi } from '../../services/senderApi';
 import { useAuth } from '../../state/useAuth';
 import { useDashboard } from '../../state/useDashboard';
 import { useToast } from '../../state/useToast';
-import type { Sender } from '../../types';
+import type { EmailTransport, Sender } from '../../types';
 import { AlertBanner } from '../common/AlertBanner';
 import { Modal } from '../common/Modal';
 
+const TRANSPORTS: Array<{
+  id: EmailTransport;
+  label: string;
+  badge: string;
+  helper: string;
+  placeholderKey: string;
+}> = [
+  {
+    id: 'brevo',
+    label: 'Brevo API',
+    badge: 'Brevo API',
+    helper: 'Recommended for Railway/Render (HTTPS port 443 · 300 free real emails/day).',
+    placeholderKey: 'xkeysib-...',
+  },
+  {
+    id: 'resend',
+    label: 'Resend API',
+    badge: 'Resend API',
+    helper: 'HTTPS API delivery (works on Railway/Render · requires verified Resend sender/domain).',
+    placeholderKey: 're_...',
+  },
+  {
+    id: 'sendgrid',
+    label: 'SendGrid API',
+    badge: 'SendGrid API',
+    helper: 'HTTPS API delivery (works on Railway/Render · requires verified Single Sender or domain).',
+    placeholderKey: 'SG....',
+  },
+  {
+    id: 'smtp',
+    label: 'SMTP',
+    badge: 'SMTP',
+    helper: 'Direct SMTP (Railway Trial/Hobby & Render Free block outbound SMTP ports 465/587).',
+    placeholderKey: '',
+  },
+];
+
 const SMTP_PRESETS = [
   { id: 'ethereal', label: 'Ethereal', host: 'smtp.ethereal.email', port: '587' },
-  { id: 'resend', label: 'Resend', host: 'smtp.resend.com', port: '465' },
   { id: 'postmark', label: 'Postmark', host: 'smtp.postmarkapp.com', port: '587' },
   { id: 'custom', label: 'Custom', host: '', port: '587' },
 ] as const;
 
+function getTransportBadge(transport: EmailTransport | undefined): string {
+  return TRANSPORTS.find((item) => item.id === transport)?.badge ?? 'SMTP';
+}
+
 /**
- * Modal for inspecting configured SMTP senders, quick provider presets, and adding/removing senders.
+ * Modal for inspecting configured email senders and connecting HTTPS API or SMTP providers.
  */
 export function SenderManagementModal() {
   const { user } = useAuth();
   const { senders, maxHourlyLimit, minimumDelayMs, setShowSenders, loadDashboard } = useDashboard();
   const { pushToast } = useToast();
 
+  const [transport, setTransport] = useState<EmailTransport>('brevo');
   const [name, setName] = useState('');
   const [from, setFrom] = useState('');
+  const [apiKey, setApiKey] = useState('');
   const [host, setHost] = useState('smtp.ethereal.email');
   const [port, setPort] = useState('587');
   const [username, setUsername] = useState('');
@@ -40,8 +82,9 @@ export function SenderManagementModal() {
   if (!user) return null;
 
   const simulatedDelivery = user.simulatedDelivery;
+  const activeTransport = TRANSPORTS.find((item) => item.id === transport) ?? TRANSPORTS[0];
 
-  const applyPreset = (presetHost: string, presetPort: string) => {
+  const applySmtpPreset = (presetHost: string, presetPort: string) => {
     setHost(presetHost);
     setPort(presetPort);
   };
@@ -52,25 +95,38 @@ export function SenderManagementModal() {
     setError('');
     setNotice('');
     try {
-      await senderApi.createSender({
-        name,
-        from,
-        host,
-        port: Number(port),
-        username,
-        password,
-        maxEmailsPerHour: hourlyLimit,
-        minimumDelayMs: delaySeconds * 1000,
-      });
+      await senderApi.createSender(
+        transport === 'smtp'
+          ? {
+              transport: 'smtp',
+              name,
+              from,
+              host,
+              port: Number(port),
+              username,
+              password,
+              maxEmailsPerHour: hourlyLimit,
+              minimumDelayMs: delaySeconds * 1000,
+            }
+          : {
+              transport,
+              name,
+              from,
+              apiKey,
+              maxEmailsPerHour: hourlyLimit,
+              minimumDelayMs: delaySeconds * 1000,
+            },
+      );
       const addedName = name.trim();
       setName('');
       setFrom('');
+      setApiKey('');
       setUsername('');
       setPassword('');
-      setNotice('SMTP connection verified and sender added.');
+      setNotice(`${activeTransport.badge} verified and sender added.`);
       pushToast({
-        title: 'SMTP sender connected',
-        description: addedName,
+        title: 'Email sender connected',
+        description: `${addedName} (${activeTransport.badge})`,
         tone: 'success',
       });
       await loadDashboard(true);
@@ -111,10 +167,10 @@ export function SenderManagementModal() {
       <header className="flex items-center justify-between border-b border-zinc-200 px-5 py-4 sm:px-6 dark:border-zinc-800">
         <div>
           <h2 id="senders-title" className="text-base font-semibold text-zinc-900 dark:text-zinc-100">
-            SMTP senders
+            Email senders
           </h2>
           <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
-            Verify credentials and manage per-sender throughput caps.
+            Connect HTTPS email APIs (Brevo, Resend, SendGrid) or SMTP servers with encrypted keys.
           </p>
         </div>
         <button
@@ -172,6 +228,9 @@ export function SenderManagementModal() {
                           {Math.ceil(sender.minimumDelayMs / 1000)}s gap
                         </p>
                         <div className="mt-2 flex flex-wrap gap-1.5">
+                          <span className="rounded border border-emerald-200 bg-emerald-50/80 px-1.5 py-0.5 text-[11px] font-medium text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300">
+                            {getTransportBadge(sender.transport)}
+                          </span>
                           {sender.simulated && (
                             <span className="rounded border border-sky-200 bg-sky-50 px-1.5 py-0.5 text-[11px] font-medium text-sky-800 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300">
                               Simulated
@@ -237,8 +296,8 @@ export function SenderManagementModal() {
 
         {simulatedDelivery ? (
           <AlertBanner tone="info">
-            Demo delivery mode is active. Emails are processed and marked as simulated without
-            making outbound SMTP connections.
+            Demo delivery mode is active (`DEMO_EMAIL_MODE=true`). Emails are processed and marked as
+            simulated without making outbound connections.
           </AlertBanner>
         ) : (
           <form onSubmit={(event) => void handleSubmit(event)} className="space-y-3">
@@ -251,28 +310,38 @@ export function SenderManagementModal() {
               </p>
             </div>
 
-            <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-              <span className="mr-1 text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
-                Presets:
-              </span>
-              {SMTP_PRESETS.map((preset) => {
-                const selected = host === preset.host && port === preset.port;
+            <div
+              role="radiogroup"
+              aria-label="Email transport provider"
+              className="grid grid-cols-2 gap-1.5 sm:grid-cols-4"
+            >
+              {TRANSPORTS.map((item) => {
+                const selected = transport === item.id;
                 return (
                   <button
-                    key={preset.id}
+                    key={item.id}
                     type="button"
-                    onClick={() => applyPreset(preset.host, preset.port)}
-                    className={`rounded-md border px-2 py-1 text-xs ${
+                    role="radio"
+                    aria-checked={selected}
+                    onClick={() => {
+                      setTransport(item.id);
+                      setError('');
+                    }}
+                    className={`rounded-md border px-2.5 py-1.5 text-xs font-medium ${
                       selected
-                        ? 'border-[#0f766e] bg-[#0f766e]/10 font-medium text-[#0f766e] dark:border-[#14b8a6] dark:bg-[#14b8a6]/15 dark:text-[#14b8a6]'
+                        ? 'border-[#0f766e] bg-[#0f766e]/10 text-[#0f766e] dark:border-[#14b8a6] dark:bg-[#14b8a6]/15 dark:text-[#14b8a6]'
                         : 'border-zinc-200 bg-zinc-50 text-zinc-700 hover:bg-white dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800'
                     }`}
                   >
-                    {preset.label}
+                    {item.label}
                   </button>
                 );
               })}
             </div>
+
+            <p className="rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900/60 dark:text-zinc-400">
+              {activeTransport.helper}
+            </p>
 
             <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
               Sender name
@@ -282,12 +351,12 @@ export function SenderManagementModal() {
                 required
                 maxLength={120}
                 className={fieldClass}
-                placeholder="Ethereal sender"
+                placeholder="ReachInbox Outreach"
               />
             </label>
 
             <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
-              Sender email
+              {transport === 'smtp' ? 'Sender email' : 'Verified sender email'}
               <input
                 type="email"
                 value={from}
@@ -295,60 +364,101 @@ export function SenderManagementModal() {
                 required
                 maxLength={320}
                 className={fieldClass}
-                placeholder="you@example.com"
+                placeholder="you@yourdomain.com"
               />
             </label>
 
-            <div className="grid grid-cols-[1fr_100px] gap-3">
+            {transport !== 'smtp' ? (
               <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
-                SMTP host
+                {activeTransport.badge} key
                 <input
-                  value={host}
-                  onChange={(event) => setHost(event.target.value)}
+                  type="password"
+                  autoComplete="off"
+                  value={apiKey}
+                  onChange={(event) => setApiKey(event.target.value)}
                   required
-                  maxLength={255}
-                  className={fieldClass}
-                  placeholder="smtp.example.com"
+                  maxLength={4096}
+                  className={`${fieldClass} font-mono`}
+                  placeholder={activeTransport.placeholderKey}
                 />
               </label>
-              <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
-                Port
-                <input
-                  type="number"
-                  value={port}
-                  onChange={(event) => setPort(event.target.value)}
-                  required
-                  min={1}
-                  max={65535}
-                  className={`${fieldClass} font-mono tabular-nums`}
-                />
-              </label>
-            </div>
+            ) : (
+              <>
+                <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                  <span className="mr-1 text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
+                    SMTP presets:
+                  </span>
+                  {SMTP_PRESETS.map((preset) => {
+                    const selected = host === preset.host && port === preset.port;
+                    return (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        onClick={() => applySmtpPreset(preset.host, preset.port)}
+                        className={`rounded-md border px-2 py-1 text-xs ${
+                          selected
+                            ? 'border-[#0f766e] bg-[#0f766e]/10 font-medium text-[#0f766e] dark:border-[#14b8a6] dark:bg-[#14b8a6]/15 dark:text-[#14b8a6]'
+                            : 'border-zinc-200 bg-zinc-50 text-zinc-700 hover:bg-white dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800'
+                        }`}
+                      >
+                        {preset.label}
+                      </button>
+                    );
+                  })}
+                </div>
 
-            <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
-              SMTP username
-              <input
-                autoComplete="username"
-                value={username}
-                onChange={(event) => setUsername(event.target.value)}
-                required
-                maxLength={255}
-                className={fieldClass}
-              />
-            </label>
+                <div className="grid grid-cols-[1fr_100px] gap-3">
+                  <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                    SMTP host
+                    <input
+                      value={host}
+                      onChange={(event) => setHost(event.target.value)}
+                      required
+                      maxLength={255}
+                      className={fieldClass}
+                      placeholder="smtp.example.com"
+                    />
+                  </label>
+                  <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                    Port
+                    <input
+                      type="number"
+                      value={port}
+                      onChange={(event) => setPort(event.target.value)}
+                      required
+                      min={1}
+                      max={65535}
+                      className={`${fieldClass} font-mono tabular-nums`}
+                    />
+                  </label>
+                </div>
 
-            <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
-              SMTP password
-              <input
-                type="password"
-                autoComplete="new-password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                required
-                maxLength={4096}
-                className={fieldClass}
-              />
-            </label>
+                <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                  SMTP username
+                  <input
+                    autoComplete="username"
+                    value={username}
+                    onChange={(event) => setUsername(event.target.value)}
+                    required
+                    maxLength={255}
+                    className={fieldClass}
+                  />
+                </label>
+
+                <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                  SMTP password
+                  <input
+                    type="password"
+                    autoComplete="new-password"
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    required
+                    maxLength={4096}
+                    className={fieldClass}
+                  />
+                </label>
+              </>
+            )}
 
             <div className="grid grid-cols-2 gap-3">
               <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">

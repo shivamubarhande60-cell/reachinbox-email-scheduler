@@ -33,10 +33,13 @@ export interface Campaign {
   leads: Lead[];
 }
 
+export type EmailTransport = 'smtp' | 'resend' | 'brevo' | 'sendgrid';
+
 export interface Sender {
   id: string;
   name: string;
   from: string;
+  transport?: EmailTransport;
   maxEmailsPerHour: number;
   minimumDelayMs: number;
   managed: boolean;

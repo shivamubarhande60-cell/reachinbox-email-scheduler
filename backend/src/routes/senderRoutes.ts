@@ -25,10 +25,11 @@ senderRouter.get(
 
     res.json({
       status: 'Success',
-      data: configuredSenders.map(({ id, name, from, maxEmailsPerHour, minimumDelayMs: delay, managed, simulated }) => ({
+      data: configuredSenders.map(({ id, name, from, transport, maxEmailsPerHour, minimumDelayMs: delay, managed, simulated }) => ({
         id,
         name,
         from,
+        transport,
         maxEmailsPerHour: maxEmailsPerHour ?? configuredHourlyLimit,
         minimumDelayMs: delay ?? minimumDelayMs,
         managed: managed === true,
@@ -52,7 +53,7 @@ senderRouter.post(
       etherealOnly: account?.googleId === 'local-demo-user' && !isEmailSimulationEnabled(),
     });
 
-    res.status(201).json({ status: 'Success', message: 'SMTP sender connected.' });
+    res.status(201).json({ status: 'Success', message: 'Email sender connected.' });
   }),
 );
 

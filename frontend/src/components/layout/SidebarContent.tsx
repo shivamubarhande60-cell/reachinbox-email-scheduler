@@ -237,7 +237,7 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
           >
             <span className="inline-flex items-center gap-2.5">
               <Settings size={15} className="text-zinc-500 dark:text-zinc-400" aria-hidden="true" />
-              <span>SMTP senders</span>
+              <span>Email senders</span>
             </span>
             <span className="font-mono text-xs text-zinc-500 tabular-nums dark:text-zinc-400">
               {senders.length}
