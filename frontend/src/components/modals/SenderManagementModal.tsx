@@ -20,28 +20,28 @@ const TRANSPORTS: Array<{
     id: 'brevo',
     label: 'Brevo API',
     badge: 'Brevo API',
-    helper: 'Recommended for Railway/Render (HTTPS port 443 · 300 free real emails/day).',
+    helper: 'Recommended for Railway (HTTPS port 443 · 300 free real emails/day).',
     placeholderKey: 'xkeysib-...',
   },
   {
     id: 'resend',
     label: 'Resend API',
     badge: 'Resend API',
-    helper: 'HTTPS API delivery (works on Railway/Render · requires verified Resend sender/domain).',
+    helper: 'HTTPS API delivery (works on Railway · requires verified Resend sender/domain).',
     placeholderKey: 're_...',
   },
   {
     id: 'sendgrid',
     label: 'SendGrid API',
     badge: 'SendGrid API',
-    helper: 'HTTPS API delivery (works on Railway/Render · requires verified Single Sender or domain).',
+    helper: 'HTTPS API delivery (works on Railway · requires verified Single Sender or domain).',
     placeholderKey: 'SG....',
   },
   {
     id: 'smtp',
     label: 'SMTP',
     badge: 'SMTP',
-    helper: 'Direct SMTP (Railway Trial/Hobby & Render Free block outbound SMTP ports 465/587).',
+    helper: 'Direct SMTP (for local dev or Railway Pro+; Railway Trial/Hobby blocks outbound SMTP ports 25/465/587).',
     placeholderKey: '',
   },
 ];
@@ -98,24 +98,24 @@ export function SenderManagementModal() {
       await senderApi.createSender(
         transport === 'smtp'
           ? {
-              transport: 'smtp',
-              name,
-              from,
-              host,
-              port: Number(port),
-              username,
-              password,
-              maxEmailsPerHour: hourlyLimit,
-              minimumDelayMs: delaySeconds * 1000,
-            }
+            transport: 'smtp',
+            name,
+            from,
+            host,
+            port: Number(port),
+            username,
+            password,
+            maxEmailsPerHour: hourlyLimit,
+            minimumDelayMs: delaySeconds * 1000,
+          }
           : {
-              transport,
-              name,
-              from,
-              apiKey,
-              maxEmailsPerHour: hourlyLimit,
-              minimumDelayMs: delaySeconds * 1000,
-            },
+            transport,
+            name,
+            from,
+            apiKey,
+            maxEmailsPerHour: hourlyLimit,
+            minimumDelayMs: delaySeconds * 1000,
+          },
       );
       const addedName = name.trim();
       setName('');
@@ -327,11 +327,10 @@ export function SenderManagementModal() {
                       setTransport(item.id);
                       setError('');
                     }}
-                    className={`rounded-md border px-2.5 py-1.5 text-xs font-medium ${
-                      selected
-                        ? 'border-[#0f766e] bg-[#0f766e]/10 text-[#0f766e] dark:border-[#14b8a6] dark:bg-[#14b8a6]/15 dark:text-[#14b8a6]'
-                        : 'border-zinc-200 bg-zinc-50 text-zinc-700 hover:bg-white dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800'
-                    }`}
+                    className={`rounded-md border px-2.5 py-1.5 text-xs font-medium ${selected
+                      ? 'border-[#0f766e] bg-[#0f766e]/10 text-[#0f766e] dark:border-[#14b8a6] dark:bg-[#14b8a6]/15 dark:text-[#14b8a6]'
+                      : 'border-zinc-200 bg-zinc-50 text-zinc-700 hover:bg-white dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800'
+                      }`}
                   >
                     {item.label}
                   </button>
@@ -395,11 +394,10 @@ export function SenderManagementModal() {
                         key={preset.id}
                         type="button"
                         onClick={() => applySmtpPreset(preset.host, preset.port)}
-                        className={`rounded-md border px-2 py-1 text-xs ${
-                          selected
-                            ? 'border-[#0f766e] bg-[#0f766e]/10 font-medium text-[#0f766e] dark:border-[#14b8a6] dark:bg-[#14b8a6]/15 dark:text-[#14b8a6]'
-                            : 'border-zinc-200 bg-zinc-50 text-zinc-700 hover:bg-white dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800'
-                        }`}
+                        className={`rounded-md border px-2 py-1 text-xs ${selected
+                          ? 'border-[#0f766e] bg-[#0f766e]/10 font-medium text-[#0f766e] dark:border-[#14b8a6] dark:bg-[#14b8a6]/15 dark:text-[#14b8a6]'
+                          : 'border-zinc-200 bg-zinc-50 text-zinc-700 hover:bg-white dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800'
+                          }`}
                       >
                         {preset.label}
                       </button>

@@ -5,9 +5,9 @@
 
 Compose campaigns, schedule background jobs, manage SMTP senders, and track email activity through a unified dashboard. Designed around reliable job processing, sender-level rate limiting, restart recovery, and searchable email records.
 
-[**Live Demo**](https://reachinbox-email-scheduler-eaqb.onrender.com/) · [**Source Code**](https://github.com/shivamubarhande60-cell/reachinbox-email-scheduler)
+[**Live App (Railway)**](https://reachinbox-web-production-af36632b.up.railway.app/) · [**Source Code**](https://github.com/shivamubarhande60-cell/reachinbox-email-scheduler)
 
-> **Demo notice:** The hosted demo simulates email delivery because Render's free plan blocks outbound SMTP. No real emails are sent in simulated mode. Real test delivery was verified locally using Ethereal SMTP.
+> **Delivery notice:** Deployed exclusively on Railway. Real email delivery works out of the box via HTTPS email APIs (Brevo, Resend, or SendGrid over port 443), with optional `DEMO_EMAIL_MODE=true` simulated mode for sandbox testing.
 
 ---
 
@@ -85,9 +85,9 @@ frontend/src/
 | **Database** | MySQL, Prisma |
 | **Search** | Elasticsearch |
 | **Authentication** | Google OAuth, session cookies |
-| **Email** | SMTP, Ethereal test email service |
+| **Email** | Brevo, Resend, and SendGrid HTTPS APIs; SMTP (Ethereal / custom) |
 | **Integrations** | Slack OAuth |
-| **Infrastructure** | Docker, Docker Compose, Render |
+| **Infrastructure** | Docker, Docker Compose, Railway |
 
 ---
 
@@ -243,20 +243,20 @@ A hosted deployment requires:
    - `SESSION_SECRET` and `TOKEN_ENCRYPTION_KEY` (generate 32-byte / 64-hex secrets)
    - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_CALLBACK_URL`
    - `FRONTEND_URL` (or leave unset to auto-resolve `https://${{RAILWAY_PUBLIC_DOMAIN}}`)
-   - Optionally `DEMO_EMAIL_MODE=true` for simulated delivery without SMTP, or configure `SMTP_SENDERS` / dashboard senders.
+   - Set `DEMO_EMAIL_MODE=false` (default) for real email delivery via dashboard-connected HTTPS API senders (Brevo, Resend, SendGrid) or `SMTP_SENDERS`, or `DEMO_EMAIL_MODE=true` for simulated mode.
 4. Railway will run `npm run db:push && node dist/src/index.js` and verify `/health`.
 
-### Simulated Delivery on Render
+### Real Email Delivery & Optional Simulated Mode on Railway
 
-For a free Render demo, set:
+Railway Free, Trial, and Hobby plans block outbound SMTP ports (`25`, `465`, `587`). To send real emails from Railway, connect an HTTPS API sender (**Brevo**, **Resend**, or **SendGrid** over port `443`) inside the dashboard's **Email senders** modal. Direct SMTP sending works locally and on Railway Pro+ plans.
+
+To run in sandbox mode without external mail credentials, set:
 
 ```env
 DEMO_EMAIL_MODE=true
 ```
 
-The application can demonstrate scheduling, queue processing, throttling, persistence, and dashboard tracking without sending real email.
-
-Render free web services may spin down while idle, so they are not suitable for reliable, around-the-clock scheduled delivery. For actual SMTP sending, use infrastructure that permits outbound SMTP and remains available when jobs are due.
+In simulated mode, the application exercises scheduling, queue processing, throttling, persistence, and dashboard tracking without making outbound mail connections.
 
 ### Deployment Checklist
 

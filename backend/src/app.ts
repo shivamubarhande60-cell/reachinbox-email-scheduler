@@ -18,7 +18,7 @@ const localDevelopmentOrigins = new Set([
 export function createApp(): express.Express {
   const app = express();
 
-  // Trust proxy headers when deployed behind Railway / Render reverse proxies
+  // Trust proxy headers when deployed behind Railway's reverse proxy
   if (env.isProduction) {
     app.set('trust proxy', 1);
   }

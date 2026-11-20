@@ -4,7 +4,7 @@ export type SameSitePolicy = 'lax' | 'strict' | 'none';
 
 /**
  * Resolves the public frontend origin used for CORS and OAuth redirects.
- * Supports explicit FRONTEND_URL, Railway's RAILWAY_PUBLIC_DOMAIN, or Render's RENDER_EXTERNAL_URL.
+ * Supports explicit FRONTEND_URL or Railway's RAILWAY_PUBLIC_DOMAIN.
  */
 function resolveFrontendUrl(): string {
   if (process.env.FRONTEND_URL) {
@@ -12,9 +12,6 @@ function resolveFrontendUrl(): string {
   }
   if (process.env.RAILWAY_PUBLIC_DOMAIN) {
     return `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`;
-  }
-  if (process.env.RENDER_EXTERNAL_URL) {
-    return process.env.RENDER_EXTERNAL_URL;
   }
   return 'http://localhost:5173';
 }

@@ -236,7 +236,7 @@ export async function upsertHostedDemoUser() {
         subject: 'New rate-limiting controls & delivery diagnostics',
         body: 'Hi there,\n\nWe just shipped distributed sender locks, hourly UTC caps, and a live delivery inspector across ReachInbox.\n\nSchedule a test campaign from the Compose button to watch BullMQ pacing in real time.\n\nBest,\nThe ReachInbox Team',
         status: 'SCHEDULED',
-        senderId: 'render-demo-sender',
+        senderId: 'demo-sender',
         userId: user.id,
         startAt: new Date(now - 600_000),
         delayMs: 2000,
@@ -245,7 +245,7 @@ export async function upsertHostedDemoUser() {
           create: [
             {
               email: 'maya.chen@acme.example',
-              senderId: 'render-demo-sender',
+              senderId: 'demo-sender',
               status: 'SIMULATED',
               scheduledAt: new Date(now - 540_000),
               sentAt: new Date(now - 538_000),
@@ -253,7 +253,7 @@ export async function upsertHostedDemoUser() {
             },
             {
               email: 'devon.patel@northstar.example',
-              senderId: 'render-demo-sender',
+              senderId: 'demo-sender',
               status: 'SIMULATED',
               scheduledAt: new Date(now - 536_000),
               sentAt: new Date(now - 534_000),
@@ -261,13 +261,13 @@ export async function upsertHostedDemoUser() {
             },
             {
               email: 'elena@kestrel.example',
-              senderId: 'render-demo-sender',
+              senderId: 'demo-sender',
               status: 'PENDING',
               scheduledAt: new Date(now + 900_000),
             },
             {
               email: 'marcus@fieldwork.example',
-              senderId: 'render-demo-sender',
+              senderId: 'demo-sender',
               status: 'THROTTLED_DELAYED',
               scheduledAt: new Date(now + 3_600_000),
             },

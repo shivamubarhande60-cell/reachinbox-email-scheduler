@@ -58,8 +58,8 @@ function loadSenders(): Sender[] {
   if (isEmailSimulationEnabled()) {
     return [
       {
-        id: 'render-demo-sender',
-        name: 'Render demo (simulated)',
+        id: 'demo-sender',
+        name: 'Demo sender (simulated)',
         from: 'demo@reachinbox.invalid',
         transport: 'smtp',
         host: 'simulation.local',
