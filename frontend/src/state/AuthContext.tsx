@@ -5,11 +5,21 @@ import { slackApi } from '../services/slackApi';
 import type { User } from '../types';
 import { AuthContext } from './authContextDef';
 
+function getInitialAuthError(): string {
+  if (typeof window === 'undefined') return '';
+  const param = new URLSearchParams(window.location.search).get('authError');
+  if (param === 'google_unconfigured') {
+    return 'Google sign-in is not configured on this server. Sign in with email & password or open the live demo.';
+  }
+  return '';
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [authError, setAuthError] = useState('');
+  const [authError, setAuthError] = useState<string>(getInitialAuthError);
   const [demoEnabled, setDemoEnabled] = useState(false);
+  const [googleConfigured, setGoogleConfigured] = useState(false);
   const [demoLoading, setDemoLoading] = useState(false);
   const [slackBusy, setSlackBusy] = useState(false);
 
@@ -30,6 +40,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    if (new URLSearchParams(window.location.search).has('authError')) {
+      const nextUrl = new URL(window.location.href);
+      nextUrl.searchParams.delete('authError');
+      window.history.replaceState({}, '', `${nextUrl.pathname}${nextUrl.search}`);
+    }
+
     let cancelled = false;
 
     void (async () => {
@@ -59,11 +75,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .then((result) => {
         if (!cancelled) {
           setDemoEnabled(result.enabled === true);
+          setGoogleConfigured(result.googleConfigured === true);
         }
       })
       .catch(() => {
         if (!cancelled) {
           setDemoEnabled(false);
+          setGoogleConfigured(false);
         }
       });
 
@@ -83,11 +101,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await authApi.loginDemo();
       await loadUser();
     } catch (error) {
-      setAuthError(getErrorMessage(error, 'Could not open the local preview.'));
+      setAuthError(getErrorMessage(error, 'Could not open the live demo workspace.'));
     } finally {
       setDemoLoading(false);
     }
   }, [loadUser]);
+
+  const loginWithPassword = useCallback(
+    async (email: string, password: string) => {
+      await authApi.login({ email, password });
+      await loadUser();
+    },
+    [loadUser],
+  );
+
+  const registerWithPassword = useCallback(
+    async (name: string, email: string, password: string) => {
+      await authApi.register({ name, email, password });
+      await loadUser();
+    },
+    [loadUser],
+  );
 
   const logout = useCallback(async () => {
     await authApi.logout();
@@ -114,11 +148,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         authLoading,
         authError,
         demoEnabled,
+        googleConfigured,
         demoLoading,
         slackBusy,
         loadUser,
         clearUser,
         startDemoLogin,
+        loginWithPassword,
+        registerWithPassword,
         logout,
         disconnectSlack,
       }}

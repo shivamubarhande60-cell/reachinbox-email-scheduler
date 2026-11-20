@@ -7,8 +7,13 @@ import {
   authenticateGoogleCallback,
   createGoogleAuthUrl,
   getCurrentUserProfile,
+  isGoogleOAuthConfigured,
+  loginWithEmailPassword,
+  registerWithEmailPassword,
+  upsertHostedDemoUser,
   upsertLocalDemoUser,
 } from '../services/authService';
+import { isEmailSimulationEnabled } from '../services/emailDeliveryMode';
 import { isLocalDemoEnabled } from '../services/localDemo';
 import { clearSessionCookie, setSessionCookie } from '../services/sessionService';
 
@@ -18,6 +23,10 @@ export const authApiRouter = Router();
 oauthRouter.get(
   '/google',
   asyncHandler(async (_req, res) => {
+    if (!isGoogleOAuthConfigured()) {
+      res.redirect(`${env.frontendUrl}/?authError=google_unconfigured`);
+      return;
+    }
     const url = await createGoogleAuthUrl();
     res.redirect(url);
   }),
@@ -45,19 +54,51 @@ oauthRouter.get('/google/callback', async (req, res) => {
 });
 
 authApiRouter.get('/demo-status', (req, res) => {
+  const localDemo = isLocalDemoEnabled(
+    env.nodeEnv,
+    env.demo.enableLocalDemoLogin,
+    req.socket.remoteAddress,
+  );
   res.json({
-    enabled: isLocalDemoEnabled(env.nodeEnv, env.demo.enableLocalDemoLogin, req.socket.remoteAddress),
+    enabled: localDemo || isEmailSimulationEnabled(),
+    googleConfigured: isGoogleOAuthConfigured(),
+    passwordAuthEnabled: true,
   });
 });
 
 authApiRouter.post(
   '/demo',
   asyncHandler(async (req, res) => {
-    if (!isLocalDemoEnabled(env.nodeEnv, env.demo.enableLocalDemoLogin, req.socket.remoteAddress)) {
-      throw new NotFoundError('Local preview is disabled.');
+    const localDemo = isLocalDemoEnabled(
+      env.nodeEnv,
+      env.demo.enableLocalDemoLogin,
+      req.socket.remoteAddress,
+    );
+    const hostedDemo = isEmailSimulationEnabled();
+
+    if (!localDemo && !hostedDemo) {
+      throw new NotFoundError('Demo workspace is disabled.');
     }
 
-    const user = await upsertLocalDemoUser();
+    const user = hostedDemo ? await upsertHostedDemoUser() : await upsertLocalDemoUser();
+    setSessionCookie(res, user.id);
+    res.json({ status: 'Success' });
+  }),
+);
+
+authApiRouter.post(
+  '/register',
+  asyncHandler(async (req, res) => {
+    const user = await registerWithEmailPassword(req.body);
+    setSessionCookie(res, user.id);
+    res.status(201).json({ status: 'Success' });
+  }),
+);
+
+authApiRouter.post(
+  '/login',
+  asyncHandler(async (req, res) => {
+    const user = await loginWithEmailPassword(req.body);
     setSessionCookie(res, user.id);
     res.json({ status: 'Success' });
   }),

@@ -1,5 +1,8 @@
-import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
+import { createCipheriv, createDecipheriv, randomBytes, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
+import { promisify } from 'node:util';
 import { env } from '../config/env';
+
+const scrypt = promisify(scryptCallback);
 
 function getEncryptionKey(): Buffer {
   const value = env.tokenEncryptionKey;
@@ -48,4 +51,36 @@ export function encryptToken(token: string) {
  */
 export function decryptToken(encryptedToken: string, tokenIv: string, tokenTag: string): string {
   return decryptSecret(encryptedToken, tokenIv, tokenTag);
+}
+
+/**
+ * Hashes a user password with a random 16-byte salt using Node's native scrypt KDF.
+ */
+export async function hashPassword(password: string): Promise<string> {
+  const salt = randomBytes(16).toString('hex');
+  const derived = (await scrypt(password, salt, 64)) as Buffer;
+  return `scrypt:${salt}:${derived.toString('hex')}`;
+}
+
+/**
+ * Verifies a plaintext password against a stored `scrypt:<salt>:<hash>` record using timing-safe equality.
+ */
+export async function verifyPassword(
+  password: string,
+  storedHash: string | null | undefined,
+): Promise<boolean> {
+  if (!storedHash) return false;
+  const parts = storedHash.split(':');
+  if (parts.length !== 3 || parts[0] !== 'scrypt') return false;
+
+  const [, salt, keyHex] = parts;
+  if (!salt || !keyHex || !/^[a-fA-F0-9]+$/.test(keyHex)) return false;
+
+  try {
+    const storedKey = Buffer.from(keyHex, 'hex');
+    const derivedKey = (await scrypt(password, salt, storedKey.length)) as Buffer;
+    return storedKey.length === derivedKey.length && timingSafeEqual(storedKey, derivedKey);
+  } catch {
+    return false;
+  }
 }

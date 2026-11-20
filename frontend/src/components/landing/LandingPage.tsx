@@ -1,10 +1,12 @@
+import { useState } from 'react';
 import { MotionConfig, motion } from 'framer-motion';
-import { Gauge, KeyRound, Moon, Send, ShieldCheck, Sun } from 'lucide-react';
+import { Gauge, KeyRound, LoaderCircle, Moon, Play, Send, ShieldCheck, Sun } from 'lucide-react';
 import { env } from '../../config/env';
 import { useAuth } from '../../state/useAuth';
 import { useTheme } from '../../state/useTheme';
 import { AlertBanner } from '../common/AlertBanner';
 import { ArchitectureDiagram } from './ArchitectureDiagram';
+import { AuthModal, type AuthModalMode } from './AuthModal';
 import { QueueSimulator } from './QueueSimulator';
 
 function GoogleLogo() {
@@ -52,11 +54,12 @@ const CAPABILITIES = [
 ];
 
 /**
- * Interactive startup landing experience for unauthenticated visitors with live Queue Simulator.
+ * Interactive startup landing experience with built-in email/password auth modal and 1-click live demo.
  */
 export function LandingPage() {
-  const { authError, demoEnabled, demoLoading, startDemoLogin } = useAuth();
+  const { authError, demoEnabled, googleConfigured, demoLoading, startDemoLogin } = useAuth();
   const { theme, toggleTheme } = useTheme();
+  const [authModalMode, setAuthModalMode] = useState<AuthModalMode | null>(null);
 
   return (
     <MotionConfig reducedMotion="user">
@@ -117,18 +120,28 @@ export function LandingPage() {
                   type="button"
                   onClick={() => void startDemoLogin()}
                   disabled={demoLoading}
-                  className="hidden h-9 items-center rounded-lg border border-zinc-200 bg-white px-3 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-60 sm:inline-flex dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                  className="hidden h-9 items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-60 sm:inline-flex dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
                 >
-                  {demoLoading ? 'Opening…' : 'Try preview'}
+                  <Play size={11} aria-hidden="true" />
+                  <span>{demoLoading ? 'Opening…' : 'Live demo'}</span>
                 </button>
               )}
 
-              <a
-                href={`${env.apiUrl}/auth/google`}
-                className="inline-flex h-9 items-center rounded-lg bg-[#0f766e] px-3.5 text-xs font-medium text-white hover:bg-[#115e59] dark:bg-[#14b8a6] dark:text-zinc-950 dark:hover:bg-[#0d9488]"
+              <button
+                type="button"
+                onClick={() => setAuthModalMode('login')}
+                className="inline-flex h-9 items-center rounded-lg border border-zinc-200 bg-white px-3 text-xs font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
               >
                 Sign in
-              </a>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setAuthModalMode('register')}
+                className="inline-flex h-9 items-center rounded-lg bg-[#0f766e] px-3.5 text-xs font-medium text-white hover:bg-[#115e59] dark:bg-[#14b8a6] dark:text-zinc-950 dark:hover:bg-[#0d9488]"
+              >
+                Get started
+              </button>
             </div>
           </div>
         </header>
@@ -167,29 +180,44 @@ export function LandingPage() {
                 )}
 
                 <div className="mt-7 flex flex-wrap items-center gap-3">
-                  <a
-                    href={`${env.apiUrl}/auth/google`}
-                    className="inline-flex min-h-[44px] items-center justify-center gap-2.5 rounded-lg border border-zinc-300 bg-white px-5 py-2.5 text-sm font-medium text-zinc-900 shadow-sm hover:border-zinc-400 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:border-zinc-600 dark:hover:bg-zinc-800"
+                  <button
+                    type="button"
+                    onClick={() => setAuthModalMode('register')}
+                    className="inline-flex min-h-[44px] items-center justify-center rounded-lg bg-[#0f766e] px-5 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-[#115e59] dark:bg-[#14b8a6] dark:text-zinc-950 dark:hover:bg-[#0d9488]"
                   >
-                    <GoogleLogo />
-                    <span>Continue with Google</span>
-                  </a>
+                    Get started free
+                  </button>
 
                   {demoEnabled && (
                     <button
                       type="button"
                       onClick={() => void startDemoLogin()}
                       disabled={demoLoading}
-                      className="inline-flex min-h-[44px] items-center justify-center rounded-lg border border-zinc-200 bg-zinc-100 px-4 py-2.5 text-sm font-medium text-zinc-800 hover:bg-zinc-200/70 disabled:opacity-60 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                      className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-lg border border-zinc-300 bg-white px-4 py-2.5 text-sm font-medium text-zinc-900 hover:border-zinc-400 hover:bg-zinc-50 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:border-zinc-600 dark:hover:bg-zinc-800"
                     >
-                      {demoLoading ? 'Opening preview…' : 'Open local preview'}
+                      {demoLoading ? (
+                        <LoaderCircle size={14} className="animate-spin" aria-hidden="true" />
+                      ) : (
+                        <Play size={14} aria-hidden="true" />
+                      )}
+                      <span>{demoLoading ? 'Opening demo…' : 'Try live demo'}</span>
                     </button>
+                  )}
+
+                  {googleConfigured && (
+                    <a
+                      href={`${env.apiUrl}/auth/google`}
+                      className="inline-flex min-h-[44px] items-center justify-center gap-2.5 rounded-lg border border-zinc-300 bg-white px-4 py-2.5 text-sm font-medium text-zinc-900 shadow-sm hover:border-zinc-400 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:border-zinc-600 dark:hover:bg-zinc-800"
+                    >
+                      <GoogleLogo />
+                      <span>Continue with Google</span>
+                    </a>
                   )}
                 </div>
 
                 <p className="mt-4 text-xs text-zinc-500 dark:text-zinc-400">
-                  Private per-account workspace. Use the interactive simulator to test sender
-                  throttling before signing in.
+                  Create an account in seconds or launch the pre-seeded live demo workspace to test
+                  analytics, scheduling, and queue tracking.
                 </p>
               </motion.div>
 
@@ -254,17 +282,31 @@ export function LandingPage() {
                   Ready to schedule your next campaign?
                 </h2>
                 <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-                  Sign in with Google to connect an SMTP sender and launch a paced campaign in
-                  seconds.
+                  Create your free workspace or explore the live demo dashboard immediately.
                 </p>
               </div>
 
-              <a
-                href={`${env.apiUrl}/auth/google`}
-                className="inline-flex min-h-[44px] shrink-0 items-center justify-center gap-2 rounded-lg bg-[#0f766e] px-5 py-2.5 text-sm font-medium text-white hover:bg-[#115e59] dark:bg-[#14b8a6] dark:text-zinc-950 dark:hover:bg-[#0d9488]"
-              >
-                <span>Open workspace</span>
-              </a>
+              <div className="flex flex-wrap items-center gap-3">
+                {demoEnabled && (
+                  <button
+                    type="button"
+                    onClick={() => void startDemoLogin()}
+                    disabled={demoLoading}
+                    className="inline-flex min-h-[44px] shrink-0 items-center justify-center gap-2 rounded-lg border border-zinc-300 bg-white px-4 py-2.5 text-sm font-medium text-zinc-900 hover:bg-zinc-50 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
+                  >
+                    <Play size={14} aria-hidden="true" />
+                    <span>{demoLoading ? 'Opening…' : 'Try live demo'}</span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => setAuthModalMode('register')}
+                  className="inline-flex min-h-[44px] shrink-0 items-center justify-center gap-2 rounded-lg bg-[#0f766e] px-5 py-2.5 text-sm font-medium text-white hover:bg-[#115e59] dark:bg-[#14b8a6] dark:text-zinc-950 dark:hover:bg-[#0d9488]"
+                >
+                  <span>Create free account</span>
+                </button>
+              </div>
             </div>
           </section>
         </main>
@@ -275,6 +317,10 @@ export function LandingPage() {
             <span className="font-mono">Express · BullMQ · Redis · MySQL · React</span>
           </div>
         </footer>
+
+        {authModalMode && (
+          <AuthModal initialMode={authModalMode} onClose={() => setAuthModalMode(null)} />
+        )}
       </div>
     </MotionConfig>
   );

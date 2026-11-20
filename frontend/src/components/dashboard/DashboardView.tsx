@@ -139,7 +139,7 @@ export function DashboardView() {
               SMTP sends are simulated.
             </AlertBanner>
           )}
-          {user.isDemo && (
+          {user.isDemo && !user.simulatedDelivery && (
             <AlertBanner tone="warning">
               Local preview session. SMTP sending is restricted to Ethereal; Google sign-in is
               unchanged.
